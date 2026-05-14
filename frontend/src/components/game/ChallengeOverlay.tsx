@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../stores/gameStore';
-import { shortenAddress, targetName } from '../../lib/cardUtils';
+import { targetName } from '../../lib/cardUtils';
 
 const MASKS = ['🦊', '🐰', '🐱', '🦉'];
 const MASK_NAMES = ['Fox', 'Rabbit', 'Cat', 'Owl'];
@@ -15,7 +15,6 @@ interface Props {
 }
 
 export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, onDismiss }: Props) {
-  const players = useGameStore((s) => s.players);
   const lastClaimCount = useGameStore((s) => s.lastClaimCount);
   const targetCard = useGameStore((s) => s.targetCard);
 

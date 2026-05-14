@@ -51,7 +51,7 @@ export default function GameLog({ gameId }: { gameId: string }) {
                 // Filter by gameId
                 if (args.gameId !== undefined && BigInt(args.gameId) !== BigInt(gameId)) continue;
 
-                let msg = name;
+                let msg: string = name;
                 if (name === 'CardsPlayed') msg = `🃏 ${shortenAddress(args.player)} played ${args.count} card(s)`;
                 if (name === 'LiarCalled') msg = `🤥 ${shortenAddress(args.accuser)} calls LIAR on ${shortenAddress(args.accused)}!`;
                 if (name === 'ChallengeResolved') msg = args.lieConfirmed ? `✗ Lie confirmed! ${shortenAddress(args.spinner)} spins` : `✓ All valid! ${shortenAddress(args.spinner)} spins`;

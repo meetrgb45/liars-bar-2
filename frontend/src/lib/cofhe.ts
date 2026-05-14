@@ -18,7 +18,7 @@ export async function initCofhe(publicClient: PublicClient, walletClient: Wallet
         const { arbSepolia } = await import('@cofhe/sdk/chains');
         const config = createCofheConfig({ supportedChains: [arbSepolia] });
         const client = createCofheClient(config);
-        await client.connect(publicClient, walletClient);
+        await client.connect(publicClient as any, walletClient as any);
         _client = client;
         _lastAddress = address;
         console.log('[cofhe] initialized for', address);

@@ -29,7 +29,6 @@ export default function GameRoom() {
   const state = useGameStore((s) => s.state);
   const players = useGameStore((s) => s.players);
   const round = useGameStore((s) => s.round);
-  const winner = useGameStore((s) => s.winner);
   const currentTurnIndex = useGameStore((s) => s.currentTurnIndex);
   const targetCard = useGameStore((s) => s.targetCard);
   const myHand = useGameStore((s) => s.myHand);

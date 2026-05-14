@@ -12,7 +12,6 @@ export default function ActionButtons({ gameId }: { gameId: string }) {
   const players = useGameStore((s) => s.players);
   const currentTurnIndex = useGameStore((s) => s.currentTurnIndex);
   const selectedCards = useGameStore((s) => s.selectedCards);
-  const clearSelection = useGameStore((s) => s.clearSelection);
   const markCardsPlayed = useGameStore((s) => s.markCardsPlayed);
   const lastClaimant = useGameStore((s) => s.lastClaimant);
   const targetCard = useGameStore((s) => s.targetCard);

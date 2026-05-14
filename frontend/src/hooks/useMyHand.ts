@@ -53,7 +53,7 @@ export function useMyHand() {
 
       const hashes = await publicClient.readContract({
         address: DECK_ADDRESS, abi: DECK_ABI, functionName: 'getHandHashes', args: [deckGameId, address],
-      }) as bigint[];
+      }) as unknown as bigint[];
       console.log('[useMyHand] hashes:', hashes.map(h => h.toString()));
 
       // Check if hashes are all zero (cards not dealt yet)

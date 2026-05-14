@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
-import { initCofhe, getClient } from '../lib/cofhe';
+import { initCofhe } from '../lib/cofhe';
 import { useGameStore } from '../stores/gameStore';
 
 export function useCofhe() {
