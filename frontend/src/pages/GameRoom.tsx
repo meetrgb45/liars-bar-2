@@ -12,6 +12,7 @@ import { GAME_ADDRESS, GAME_ABI } from '../lib/contracts';
 import { getGasOverrides } from '../lib/gas';
 import { shortenAddress, targetName, cardName, cardEmoji } from '../lib/cardUtils';
 import SpinAnimation from '../components/revolver/SpinAnimation';
+import ChallengeOverlay from '../components/game/ChallengeOverlay';
 import Timer from '../components/shared/Timer';
 
 const MASKS = ['🦊', '🐰', '🐱', '🦉'];
@@ -47,6 +48,13 @@ export default function GameRoom() {
   const challengeResolvedRef = useRef(false);
   const handDecryptedRef = useRef(0);
 
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [challengePhase, setChallengePhase] = useState<'accusation' | 'revealing' | 'verdict-lie' | 'verdict-valid' | null>(null);
+  const [challengeAccuser, setChallengeAccuser] = useState(0);
+  const [challengeAccused, setChallengeAccused] = useState(0);
+  const prevStateRef = useRef(state);
+
   const { decryptHand } = useMyHand();
   const { resolveChallenge, resolving } = useChallenge();
   const { resolveSpin, spinning, outcome, clearOutcome, isMySpinTurn } = useSpin();
@@ -78,8 +86,27 @@ export default function GameRoom() {
     }
   }, [state, cofheReady, iAmChallenger, resolveChallenge]);
 
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  // Drive challenge overlay phases based on state transitions
+  useEffect(() => {
+    if (prevStateRef.current === 'PlayerTurn' && state === 'Challenging') {
+      // Just entered Challenging — show accusation
+      const accuserIdx = currentTurnIndex;
+      const accusedIdx = players.findIndex(p => p.addr?.toLowerCase() === lastClaimant?.toLowerCase());
+      setChallengeAccuser(accuserIdx);
+      setChallengeAccused(accusedIdx >= 0 ? accusedIdx : 0);
+      setChallengePhase('accusation');
+      setTimeout(() => setChallengePhase('revealing'), 2000);
+    }
+    if (prevStateRef.current === 'Challenging' && state === 'Spinning') {
+      // Challenge resolved — show verdict
+      const pendingSpinner = useGameStore.getState().pendingSpinner;
+      const spinnerIsAccused = pendingSpinner?.toLowerCase() === players[challengeAccused]?.addr?.toLowerCase();
+      setChallengePhase(spinnerIsAccused ? 'verdict-lie' : 'verdict-valid');
+      setTimeout(() => setChallengePhase(null), 4000);
+    }
+    prevStateRef.current = state;
+  }, [state, currentTurnIndex, lastClaimant, players, challengeAccused]);
+
   const isMyTurn = players[currentTurnIndex]?.addr?.toLowerCase() === address?.toLowerCase();
   const playerCount = players.filter((p) => p.addr !== '0x0000000000000000000000000000000000000000').length;
   const isHost = players[0]?.addr?.toLowerCase() === address?.toLowerCase();
@@ -117,6 +144,12 @@ export default function GameRoom() {
       <div className="fixed inset-0 grain-overlay z-50 pointer-events-none"></div>
       <div className="fixed inset-0 table-gradient z-0"></div>
       <SpinAnimation outcome={outcome} spinning={spinning} onDismiss={clearOutcome} />
+      <ChallengeOverlay
+        phase={challengePhase}
+        accuserIndex={challengeAccuser}
+        accusedIndex={challengeAccused}
+        onDismiss={() => setChallengePhase(null)}
+      />
 
       {/* TOP — Opponents */}
       <header className="relative z-20 h-1/4 flex justify-around items-end pb-4 px-8">

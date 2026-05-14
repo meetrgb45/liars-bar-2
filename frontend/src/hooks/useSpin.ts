@@ -20,7 +20,7 @@ export function useSpin() {
   const isMySpinTurn = pendingSpinner?.toLowerCase() === address?.toLowerCase();
 
   const resolveSpin = useCallback(async () => {
-    if (!publicClient || gameId === null || !cofheReady) return;
+    if (!publicClient || gameId === null || !cofheReady || spinning) return;
     const client = getClient();
     if (!client) return;
 
@@ -45,27 +45,16 @@ export function useSpin() {
       });
 
       setOutcome(decryptedValue === 1n ? 'bang' : 'click');
-
-      // Check for double spin second chamber
-      const doubleCt = await publicClient.readContract({
-        address: REVOLVER_ADDRESS, abi: REVOLVER_ABI, functionName: 'getPendingDoubleCt', args: [BigInt(gameId)],
-      }) as bigint;
-
-      if (doubleCt && doubleCt !== 0n && decryptedValue === 0n) {
-        // First was safe, resolve second
-        const res2 = await client.decryptForTx(doubleCt).withoutPermit().execute();
-        await writeContractAsync({
-          address: GAME_ADDRESS, abi: GAME_ABI, functionName: 'publishDoubleSpinResult',
-          args: [BigInt(gameId), doubleCt, res2.decryptedValue, res2.signature],
-          ...(await getGasOverrides(publicClient!)),
-        });
-        setOutcome(res2.decryptedValue === 1n ? 'bang' : 'click');
-      }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Spin resolution failed:', e);
+      // Don't keep spinning state if user rejected — allow retry via button
+      if (e?.message?.includes('User rejected') || e?.message?.includes('denied')) {
+        setSpinning(false);
+        return;
+      }
     }
     setSpinning(false);
-  }, [publicClient, gameId, cofheReady, writeContractAsync]);
+  }, [publicClient, gameId, cofheReady, spinning, writeContractAsync]);
 
   const activateDoubleSpin = useCallback(async () => {
     if (gameId === null || !publicClient) return;
