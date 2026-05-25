@@ -172,6 +172,23 @@ contract LiarsBarDeck {
     }
 
     /**
+     * @notice Make specific cards publicly decryptable (for challenge reveal).
+     *         Returns ctHashes for each card so frontend can decrypt and publish.
+     */
+    function revealCards(
+        uint256 gameId,
+        address player,
+        uint8[] calldata indices
+    ) external onlyGame returns (uint256[] memory ctHashes) {
+        ctHashes = new uint256[](indices.length);
+        for (uint8 i = 0; i < indices.length; i++) {
+            euint8 card = _hands[gameId][player][indices[i]];
+            FHE.allowPublic(card);
+            ctHashes[i] = uint256(euint8.unwrap(card));
+        }
+    }
+
+    /**
      * @notice Get remaining unplayed card count.
      */
     function remainingCards(uint256 gameId, address player) external view returns (uint8 count) {

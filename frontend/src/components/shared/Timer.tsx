@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
 
+const TURN_TIME = 60;
+
 export default function Timer() {
   const state = useGameStore((s) => s.state);
   const currentTurnIndex = useGameStore((s) => s.currentTurnIndex);
-  const [timeLeft, setTimeLeft] = useState(30);
+  const [timeLeft, setTimeLeft] = useState(TURN_TIME);
 
-  // Reset timer on turn/state change
   useEffect(() => {
-    setTimeLeft(30);
+    setTimeLeft(TURN_TIME);
   }, [state, currentTurnIndex]);
 
-  // Countdown
   useEffect(() => {
     if (state === 'WaitingForPlayers' || state === 'GameOver') return;
     const interval = setInterval(() => {
@@ -22,17 +22,14 @@ export default function Timer() {
 
   if (state === 'WaitingForPlayers' || state === 'GameOver') return null;
 
-  const isLow = timeLeft <= 10;
+  const isLow = timeLeft <= 15;
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-20 h-2 bg-gray-700 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-1000 ${isLow ? 'bg-bar-danger' : 'bg-bar-gold'}`}
-          style={{ width: `${(timeLeft / 30) * 100}%` }}
-        />
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <div style={{ width: 80, height: 6, background: '#2a1a0a', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 3, transition: 'width 1s linear', width: `${(timeLeft / TURN_TIME) * 100}%`, background: isLow ? '#e94560' : '#c9a84c' }} />
       </div>
-      <span className={`text-sm font-mono ${isLow ? 'text-bar-danger animate-pulse' : 'text-gray-400'}`}>
+      <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: isLow ? '#e94560' : '#8b7b5a', animation: isLow ? 'pulse 1s infinite' : 'none' }}>
         {timeLeft}s
       </span>
     </div>

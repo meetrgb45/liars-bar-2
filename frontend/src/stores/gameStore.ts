@@ -9,10 +9,12 @@ export interface PlayerInfo {
   points: number;
   usedExecute: boolean;
   usedDoubleSpin: boolean;
+  characterId: number;
 }
 
 interface GameStore {
   gameId: number | null;
+  gameMode: 'basic' | 'devil' | 'chaos';
   state: GameState;
   round: number;
   targetCard: number;
@@ -29,8 +31,14 @@ interface GameStore {
   chamberPointer: number;
   chamberPointers: Record<string, number>; // per-player
   pendingSpinner: string;
+  revealedCards: number[];
+  myCharacter: number;
+  stakeAmount: bigint; // index into CHARACTERS array
   // Actions
   setGameId: (id: number | null) => void;
+  setGameMode: (mode: 'basic' | 'devil' | 'chaos') => void;
+  setMyCharacter: (idx: number) => void;
+  setStakeAmount: (amount: bigint) => void;
   setCofheReady: (ready: boolean) => void;
   setMyHand: (hand: (number | null)[]) => void;
   toggleCard: (index: number) => void;
@@ -43,10 +51,12 @@ interface GameStore {
   setChamberPointer: (ptr: number) => void;
   setChamberPointers: (pointers: Record<string, number>) => void;
   setPendingSpinner: (addr: string) => void;
+  setRevealedCards: (cards: number[]) => void;
 }
 
 export const useGameStore = create<GameStore>((set) => ({
   gameId: null,
+  gameMode: 'basic',
   state: 'WaitingForPlayers',
   round: 0,
   targetCard: 0,
@@ -63,19 +73,26 @@ export const useGameStore = create<GameStore>((set) => ({
   chamberPointer: 0,
   chamberPointers: {},
   pendingSpinner: '',
+  revealedCards: [],
+  myCharacter: 0,
+  stakeAmount: 0n,
   setGameId: (id) => set({ gameId: id }),
+  setGameMode: (mode) => set({ gameMode: mode }),
+  setMyCharacter: (idx) => set({ myCharacter: idx }),
+  setStakeAmount: (amount) => set({ stakeAmount: amount }),
   setCofheReady: (ready) => set({ cofheReady: ready }),
   setMyHand: (hand) => set({ myHand: hand }),
   toggleCard: (index) => set((s) => {
-    if (s.playedCards.includes(index)) return s; // can't select played cards
+    if (s.playedCards.includes(index)) return s;
+    const maxSelect = s.gameMode === 'chaos' ? 1 : 3;
     const sel = s.selectedCards.includes(index)
       ? s.selectedCards.filter((i) => i !== index)
-      : s.selectedCards.length < 3 ? [...s.selectedCards, index] : s.selectedCards;
+      : s.selectedCards.length < maxSelect ? [...s.selectedCards, index] : s.selectedCards;
     return { selectedCards: sel };
   }),
   clearSelection: () => set({ selectedCards: [] }),
   markCardsPlayed: (indices) => set((s) => ({ playedCards: [...s.playedCards, ...indices], selectedCards: [] })),
-  resetPlayedCards: () => set({ playedCards: [], selectedCards: [], myHand: [null, null, null, null, null] }),
+  resetPlayedCards: () => set((s) => ({ playedCards: [], selectedCards: [], myHand: Array(s.gameMode === 'chaos' ? 3 : 5).fill(null), revealedCards: [] })),
   updateFromChain: (data) => set({
     state: STATE_MAP[Number(data.state)] ?? 'WaitingForPlayers',
     round: data.round,
@@ -89,4 +106,5 @@ export const useGameStore = create<GameStore>((set) => ({
   setChamberPointer: (ptr) => set({ chamberPointer: ptr }),
   setChamberPointers: (pointers) => set({ chamberPointers: pointers }),
   setPendingSpinner: (addr) => set({ pendingSpinner: addr }),
+  setRevealedCards: (cards) => set({ revealedCards: cards }),
 }));

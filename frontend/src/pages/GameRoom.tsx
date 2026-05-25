@@ -8,24 +8,38 @@ import { useCofhe } from '../hooks/useCofhe';
 import { useChallenge } from '../hooks/useChallenge';
 import { useSpin } from '../hooks/useSpin';
 import { useAutoAction } from '../hooks/useAutoAction';
-import { GAME_ADDRESS, GAME_ABI } from '../lib/contracts';
+import {
+  GAME_ADDRESS, GAME_ABI,
+  DEVIL_GAME_ADDRESS, DEVIL_GAME_ABI,
+  CHAOS_GAME_ADDRESS, CHAOS_GAME_ABI,
+} from '../lib/contracts';
 import { getGasOverrides } from '../lib/gas';
-import { shortenAddress, targetName, cardName, cardEmoji } from '../lib/cardUtils';
+import { shortenAddress, targetName } from '../lib/cardUtils';
+import { CHARACTERS } from '../lib/characters';
 import SpinAnimation from '../components/revolver/SpinAnimation';
 import ChallengeOverlay from '../components/game/ChallengeOverlay';
 import Timer from '../components/shared/Timer';
 
-const MASKS = ['🦊', '🐰', '🐱', '🦉'];
-const MASK_NAMES = ['Fox', 'Rabbit', 'Cat', 'Owl'];
+type GameMode = 'basic' | 'devil' | 'chaos';
+
+function getModeConfig(mode: GameMode) {
+  if (mode === 'devil') return { address: DEVIL_GAME_ADDRESS, abi: DEVIL_GAME_ABI };
+  if (mode === 'chaos') return { address: CHAOS_GAME_ADDRESS, abi: CHAOS_GAME_ABI };
+  return { address: GAME_ADDRESS, abi: GAME_ABI };
+}
 
 export default function GameRoom() {
-  const { id } = useParams<{ id: string }>();
+  const { id, mode: modeParam } = useParams<{ id: string; mode: string }>();
+  const mode = (modeParam || 'basic') as GameMode;
+  const { address: gameContractAddress, abi: gameAbi } = getModeConfig(mode);
   const navigate = useNavigate();
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
   const cofheReady = useCofhe();
   const setGameId = useGameStore((s) => s.setGameId);
+  const setGameMode = useGameStore((s) => s.setGameMode);
+  const stakeAmount = useGameStore((s) => s.stakeAmount);
   const state = useGameStore((s) => s.state);
   const players = useGameStore((s) => s.players);
   const round = useGameStore((s) => s.round);
@@ -49,6 +63,7 @@ export default function GameRoom() {
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [challengePhase, setChallengePhase] = useState<'accusation' | 'revealing' | 'verdict-lie' | 'verdict-valid' | null>(null);
   const [challengeAccuser, setChallengeAccuser] = useState(0);
   const [challengeAccused, setChallengeAccused] = useState(0);
@@ -60,21 +75,35 @@ export default function GameRoom() {
   useGameState();
   useAutoAction();
 
-  useEffect(() => { if (id) setGameId(Number(id)); }, [id, setGameId]);
+  useEffect(() => { if (id) { setGameId(Number(id)); setGameMode(mode); } }, [id, mode, setGameId, setGameMode]);
 
   useEffect(() => {
     if (round > 0 && round !== prevRoundRef.current) {
       prevRoundRef.current = round;
       challengeResolvedRef.current = false;
+      handDecryptedRef.current = 0;
       resetPlayedCards();
     }
   }, [round, resetPlayedCards]);
 
+  // Auto-decrypt: keep trying until hand is decrypted
   useEffect(() => {
-    if (cofheReady && state === 'PlayerTurn' && round > 0 && handDecryptedRef.current !== round && myPlayer?.alive) {
-      handDecryptedRef.current = round;
-      setTimeout(decryptHand, 2000);
-    }
+    if (!cofheReady || !myPlayer?.alive || round === 0) return;
+    if (state !== 'PlayerTurn' && state !== 'Challenging' && state !== 'Spinning') return;
+    if (handDecryptedRef.current === round) return;
+
+    handDecryptedRef.current = round;
+    const attempt = () => setTimeout(decryptHand, 3000);
+    attempt();
+
+    // Retry after 15s if still null
+    const retry = setTimeout(() => {
+      const hand = useGameStore.getState().myHand;
+      if (hand.every(c => c === null)) {
+        handDecryptedRef.current = 0; // allow re-trigger
+      }
+    }, 18000);
+    return () => clearTimeout(retry);
   }, [cofheReady, state, round, decryptHand, myPlayer?.alive]);
 
   const iAmChallenger = players[currentTurnIndex]?.addr?.toLowerCase() === address?.toLowerCase();
@@ -117,7 +146,7 @@ export default function GameRoom() {
     setError(''); setLoading(true);
     try {
       const gas = await getGasOverrides(publicClient!);
-      const hash = await writeContractAsync({ address: GAME_ADDRESS, abi: GAME_ABI, functionName: 'startGame', args: [BigInt(id!)], ...gas });
+      const hash = await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'startGame', args: [BigInt(id!)], ...gas });
       await publicClient!.waitForTransactionReceipt({ hash });
     } catch (e: any) { setError(e.shortMessage || e.message); }
     setLoading(false);
@@ -126,236 +155,225 @@ export default function GameRoom() {
   const playCards = async () => {
     if (selectedCards.length === 0) return;
     const gas = await getGasOverrides(publicClient!);
-    await writeContractAsync({ address: GAME_ADDRESS, abi: GAME_ABI, functionName: 'playCards', args: [BigInt(id!), selectedCards.map((i) => i)], ...gas });
+    if (mode === 'chaos') {
+      await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'playCard', args: [BigInt(id!), selectedCards[0]], ...gas });
+    } else {
+      await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'playCards', args: [BigInt(id!), selectedCards.map((i) => i)], ...gas });
+    }
     markCardsPlayed(selectedCards);
   };
 
   const callLiar = async () => {
     const gas = await getGasOverrides(publicClient!);
-    await writeContractAsync({ address: GAME_ADDRESS, abi: GAME_ABI, functionName: 'callLiar', args: [BigInt(id!)], ...gas });
+    await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'callLiar', args: [BigInt(id!)], ...gas });
   };
 
   // Get opponents (everyone except me)
   const opponents = players.filter((_, i) => i !== myIndex).filter(p => p.addr !== '0x0000000000000000000000000000000000000000');
 
-  return (
-    <div className="relative h-screen flex flex-col overflow-hidden">
-      <div className="fixed inset-0 grain-overlay z-50 pointer-events-none"></div>
-      <div className="fixed inset-0 table-gradient z-0"></div>
-      <SpinAnimation outcome={outcome} spinning={spinning} onDismiss={clearOutcome} />
-      <ChallengeOverlay
-        phase={challengePhase}
-        accuserIndex={challengeAccuser}
-        accusedIndex={challengeAccused}
-        onDismiss={() => setChallengePhase(null)}
-      />
 
-      {/* TOP — Opponents */}
-      <header className="relative z-20 h-1/4 flex justify-around items-end pb-4 px-8">
+  const myCharacter = useGameStore((s) => s.myCharacter);
+
+  // Characters from chain — each player's characterId is stored on-chain
+  const charForSeat = (seatIdx: number) => {
+    const player = players[seatIdx];
+    if (player && player.addr !== '0x0000000000000000000000000000000000000000') {
+      return CHARACTERS[player.characterId % CHARACTERS.length];
+    }
+    return CHARACTERS[seatIdx % CHARACTERS.length];
+  };
+
+  const CHARS = [0,1,2,3].map(i => charForSeat(i).img);
+  const CHAR_NAMES = [0,1,2,3].map(i => charForSeat(i).name);
+  const CHARS_DEAD = [0,1,2,3].map(i => charForSeat(i).dead);
+  // Basic: 0=Ace,1=King,2=Queen,3=Joker,4=Devil | Chaos: 0=King,1=Queen,2=Master,3=Chaos
+  const CARD_IMGS = mode === 'chaos'
+    ? ['/playing_card/king1.png', '/playing_card/queen1.png', '/playing_card/master1.png', '/playing_card/chaos1.png']
+    : ['/playing_card/ace1.png', '/playing_card/king1.png', '/playing_card/queen1.png', '/playing_card/joker1.png', '/playing_card/devil1.png'];
+
+  const RULES: Record<string, string[]> = {
+    basic: ['Play 1-3 cards, claim they match the table card', 'Jokers are wild (always valid)', 'Call LIAR to challenge — loser faces Roulette', 'Last player standing wins'],
+    devil: ['Same as Basic + one Devil Card in deck', 'Devil can only be played alone', 'If Devil is revealed on challenge, ALL others face Roulette'],
+    chaos: ['12 cards, 3 per player, play 1 per turn', 'Winner of challenge shoots an opponent', 'Master: accused shoots someone', 'Chaos: everyone shoots simultaneously'],
+  };
+
+  return (
+    <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <SpinAnimation outcome={outcome} spinning={spinning} onDismiss={clearOutcome} />
+      <ChallengeOverlay phase={challengePhase} accuserIndex={challengeAccuser} accusedIndex={challengeAccused} onDismiss={() => setChallengePhase(null)} />
+
+      {/* Nav */}
+      <nav style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 1rem', background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid #3a2a1a', zIndex: 100 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.7rem', color: '#8b7b5a', letterSpacing: '0.1em' }}>TABLE #{id}</span>
+          {mode !== 'basic' && <span style={{ fontSize: '0.55rem', padding: '0.1rem 0.4rem', borderRadius: '0.2rem', background: mode === 'devil' ? '#e9456030' : '#a855f730', color: mode === 'devil' ? '#e94560' : '#a855f7', border: `1px solid ${mode === 'devil' ? '#e94560' : '#a855f7'}` }}>{mode.toUpperCase()}</span>}
+          {stakeAmount > 0n && <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.4rem', borderRadius: '0.2rem', background: '#22c55e20', color: '#22c55e', border: '1px solid #22c55e' }}>{Number(stakeAmount) / 1e6} USDC x4</span>}
+        </div>
+        {state !== 'WaitingForPlayers' && state !== 'GameOver' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+            <span style={{ fontSize: '0.85rem', color: '#c9a84c' }}>Round {round}</span>
+            <img src="/hourglass.png" alt="" className="hourglass-spin" style={{ width: 20, height: 20 }} />
+            <Timer />
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.65rem', color: '#c9a84c', fontFamily: 'monospace' }}>{address ? shortenAddress(address) : ''}</span>
+          <button onClick={() => setShowRules(true)} style={{ width: 22, height: 22, borderRadius: '50%', background: 'none', border: '1.5px solid #5a4a3a', color: '#8b7b5a', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>?</button>
+        </div>
+      </nav>
+
+      {/* Opponents */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '2.5rem', padding: '1rem 1.5rem', zIndex: 20 }}>
         {opponents.map((p, i) => {
           const pIdx = players.indexOf(p);
           const isTurn = pIdx === currentTurnIndex;
           const chambers = chamberPointers[p.addr?.toLowerCase()] || 0;
           return (
-            <div key={i} className={`flex flex-col items-center gap-1 transition-all ${!p.alive ? 'opacity-30 grayscale' : ''} ${isTurn ? 'scale-110' : 'scale-90 opacity-80'}`}>
-              {isTurn && <div className="absolute -inset-3 border border-gold rounded-full opacity-30 animate-pulse"></div>}
-              <div className={`w-20 h-20 rounded-full border-2 flex items-center justify-center text-4xl ${isTurn ? 'border-gold glow-gold' : 'border-outline-variant'} bg-surface`}>
-                {p.alive ? MASKS[pIdx] : '💀'}
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', opacity: !p.alive ? 0.4 : 1, transform: isTurn ? 'scale(1.08)' : 'scale(0.95)', transition: 'transform 0.3s' }}>
+              <div className={`player-card ${!p.alive ? 'dead' : ''} ${isTurn ? 'active' : ''}`} style={{ backgroundImage: `url(${p.alive ? CHARS[pIdx] : CHARS_DEAD[pIdx]})`, width: 110, height: 110 }}>
+                <span className="player-name" style={{ fontSize: '0.75rem' }}>{CHAR_NAMES[pIdx]}</span>
               </div>
-              <div className={`px-3 py-0.5 ${isTurn ? 'bg-primary text-on-primary' : 'bg-surface-container-high text-on-surface'}`}>
-                <span className="font-stamp text-sm">{MASK_NAMES[pIdx]}</span>
+              <div className="chambers">
+                {Array.from({ length: 6 }, (_, j) => <div key={j} className={`chamber ${j < chambers ? 'safe' : ''}`} style={{ width: 10, height: 10 }} />)}
               </div>
-              <div className="flex gap-0.5">
-                {Array.from({ length: 6 }, (_, j) => (
-                  <div key={j} className={`w-2.5 h-2.5 rounded-full border ${j < chambers ? 'bg-danger-deep border-danger-deep' : 'border-outline'}`} />
-                ))}
-              </div>
-              {!p.alive && <span className="font-mono text-[10px] text-danger">ELIMINATED</span>}
             </div>
           );
         })}
-      </header>
+      </div>
 
-      {/* CENTER — Table */}
-      <section className="relative z-20 flex-1 flex flex-col items-center justify-center">
-        {/* Target + Round + Timer */}
-        <div className="flex items-center gap-6 mb-4">
-          {state !== 'WaitingForPlayers' && state !== 'GameOver' && (
-            <>
-              <span className="font-mono text-[10px] text-text-muted">ROUND {round}</span>
-              <div className="brass-border px-4 py-2 bg-surface-container">
-                <span className="font-stamp text-xl text-primary tracking-wider">{targetName(targetCard)}</span>
-              </div>
-              <Timer />
-            </>
-          )}
-        </div>
+      {/* Center */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
+        {state !== 'WaitingForPlayers' && state !== 'GameOver' && state !== 'Spinning' && (
+          <div className="target-card" style={{ backgroundImage: `url(${CARD_IMGS[targetCard]})`, marginBottom: '1rem', width: '6rem', height: '8.5rem' }} />
+        )}
 
-        {/* Table cards / claim */}
         {lastClaimant && lastClaimant !== '0x0000000000000000000000000000000000000000' && state === 'PlayerTurn' && (
-          <div className="flex flex-col items-center gap-2 mb-4">
-            <div className="flex gap-1">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', marginBottom: '0.8rem' }}>
+            <div style={{ display: 'flex' }}>
               {Array.from({ length: lastClaimCount }, (_, i) => (
-                <div key={i} className="w-10 h-14 rounded bg-card-back border border-outline-variant shadow-lg" />
+                <div key={i} className="playing-card" style={{ backgroundImage: 'url(/playing_card/back1.png)', width: '4rem', marginLeft: i > 0 ? '-1rem' : 0 }} />
               ))}
             </div>
-            <span className="font-body text-sm text-on-surface-variant italic">
-              claims {lastClaimCount} {targetName(targetCard)}{lastClaimCount > 1 ? 's' : ''}
-            </span>
+            <span style={{ fontSize: '0.85rem', color: '#dfd5b4', fontStyle: 'italic' }}>claims {lastClaimCount} {targetName(targetCard)}{lastClaimCount > 1 ? 's' : ''}</span>
           </div>
         )}
 
-        {/* Waiting state */}
         {state === 'WaitingForPlayers' && (
-          <div className="text-center space-y-4">
-            <p className="font-display text-2xl text-primary neon-glow">Table #{id}</p>
-            <p className="font-body text-text-muted">{playerCount}/4 seated</p>
-            <div className="flex justify-center gap-3">
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontSize: '1.8rem', color: '#c9a84c', marginBottom: '1rem' }}>Table #{id}</h2>
+            <p style={{ color: '#8b7b5a', marginBottom: '1rem' }}>{playerCount}/4 seated</p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', marginBottom: '1.5rem' }}>
               {[0,1,2,3].map(i => (
-                <div key={i} className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xl ${i < playerCount ? 'border-gold bg-surface-container' : 'border-outline-variant border-dashed'}`}>
-                  {i < playerCount ? MASKS[i] : ''}
+                <div key={i} className={`player-card`} style={{ backgroundImage: i < playerCount ? `url(${CHARS[i]})` : 'none', width: 80, height: 80, opacity: i < playerCount ? 1 : 0.2, border: i >= playerCount ? '2px dashed #5a4a3a' : undefined }}>
+                  {i < playerCount && <span className="player-name" style={{ fontSize: '0.6rem' }}>{CHAR_NAMES[i]}</span>}
                 </div>
               ))}
             </div>
-            {canStart && (
-              <button onClick={startGame} disabled={loading} className="mt-4 px-8 py-3 bg-gold text-bg-deep font-stamp text-xl tracking-wider hover:bg-amber-bright transition disabled:opacity-50">
-                {loading ? '⏳ DEALING...' : '🃏 DEAL THE CARDS'}
-              </button>
-            )}
-            {error && <p className="font-mono text-xs text-error">{error}</p>}
-            <p className="font-mono text-[10px] text-text-muted">Share Table ID: {id}</p>
+            {canStart && <button className="btn green" style={{ fontSize: '1.1rem', padding: '0.7rem 2rem' }} onClick={startGame} disabled={loading}>{loading ? 'Dealing...' : 'Deal the Cards'}</button>}
+            {error && <p style={{ color: '#ffb4ab', fontSize: '0.7rem', marginTop: '0.5rem' }}>{error}</p>}
+            <p style={{ color: '#5a4a3a', fontSize: '0.65rem', marginTop: '1rem' }}>Share Table ID: {id}</p>
           </div>
         )}
 
-        {/* Challenging */}
         {state === 'Challenging' && (
-          <div className="text-center space-y-3">
-            <p className="font-display text-2xl text-danger animate-pulse">⚔️ REVEALING CARDS...</p>
-            {iAmChallenger && !resolving && (
-              <button onClick={resolveChallenge} className="px-6 py-2 brass-border font-stamp text-primary">REVEAL</button>
-            )}
-            {resolving && <p className="font-mono text-xs text-text-muted animate-pulse">Decrypting via FHE...</p>}
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: '1.2rem', color: '#e94560' }}>Revealing cards...</p>
+            {iAmChallenger && !resolving && <button className="btn" style={{ marginTop: '0.8rem' }} onClick={resolveChallenge}>Reveal</button>}
+            {resolving && <p style={{ fontSize: '0.7rem', color: '#8b7b5a', marginTop: '0.5rem' }}>Decrypting via FHE...</p>}
           </div>
         )}
 
-        {/* Spinning */}
         {state === 'Spinning' && (
-          <div className="text-center space-y-4">
+          <div style={{ textAlign: 'center' }}>
+            <div className="heartbeat-vignette" />
             {isMySpinTurn ? (
               <>
-                <p className="font-display text-2xl text-danger">Your turn to pull...</p>
-                {!spinning && (
-                  <button onClick={resolveSpin} className="px-10 py-4 bg-danger-deep border-2 border-danger font-stamp text-2xl text-white tracking-wider hover:bg-danger transition animate-pulse">
-                    🔫 PULL TRIGGER
-                  </button>
-                )}
-                {spinning && <p className="font-mono text-sm text-text-muted animate-pulse">Resolving...</p>}
+                <img src="/revolver_chamber.png" alt="" className="revolver-spin" style={{ width: 120, margin: '0 auto 1rem' }} />
+                <p style={{ fontSize: '1.1rem', color: '#dfd5b4', marginBottom: '1rem' }}>Your turn to pull...</p>
+                {!spinning && <button className="btn red" style={{ fontSize: '1.2rem', padding: '0.7rem 2rem' }} onClick={resolveSpin}>Pull Trigger</button>}
+                {spinning && <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>Resolving...</p>}
               </>
             ) : (
-              <p className="font-body text-on-surface-variant animate-pulse">Waiting for trigger pull...</p>
+              <p style={{ color: '#8b7b5a' }}>Waiting for trigger pull...</p>
             )}
           </div>
         )}
 
-        {/* Game Over */}
         {state === 'GameOver' && (
-          <div className="text-center space-y-6">
-            <h2 className="font-display text-4xl text-primary neon-glow">LAST ONE STANDING</h2>
-            <div className="flex justify-center gap-4">
-              {players.filter(p => p.addr !== '0x0000000000000000000000000000000000000000').map((p, i) => {
-                const isWinner = p.alive;
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontSize: '2.2rem', color: '#c9a84c', marginBottom: '1.5rem' }}>WINNER!</h2>
+            {(() => {
+              const winnerPlayer = players.find(p => p.alive && p.addr !== '0x0000000000000000000000000000000000000000');
+              const winnerChar = winnerPlayer ? CHARACTERS[winnerPlayer.characterId % CHARACTERS.length] : CHARACTERS[0];
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <img src="/crown.png" alt="" style={{ width: 50, filter: 'drop-shadow(0 0 12px #fff08d67)' }} />
+                  <div className="player-card" style={{ backgroundImage: `url(${winnerChar.img})`, width: 130, height: 130, boxShadow: '0 0 24px #c9a84c50' }} />
+                  <span style={{ fontSize: '1.3rem', color: '#c9a84c', fontWeight: 700 }}>{winnerChar.name}</span>
+                  {winnerPlayer && <span style={{ fontSize: '0.7rem', color: '#8b7b5a', fontFamily: 'monospace' }}>{shortenAddress(winnerPlayer.addr)}</span>}
+                </div>
+              );
+            })()}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+              {players.filter(p => p.addr !== '0x0000000000000000000000000000000000000000' && !p.alive).map((p, i) => {
+                const c = CHARACTERS[p.characterId % CHARACTERS.length];
                 return (
-                  <div key={i} className={`flex flex-col items-center gap-2 p-4 rounded-lg ${isWinner ? 'border border-gold bg-gold/10' : 'opacity-40'}`}>
-                    <span className="text-4xl">{isWinner ? '👑' : '💀'}</span>
-                    <span className="text-2xl">{MASKS[i]}</span>
-                    <span className="font-mono text-[10px] text-text-address">{shortenAddress(p.addr)}</span>
-                    {isWinner && <span className="font-stamp text-gold">WINNER</span>}
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.4 }}>
+                    <div className="player-card dead" style={{ backgroundImage: `url(${c.dead})`, width: 60, height: 60 }} />
+                    <span style={{ fontSize: '0.55rem', color: '#5a4a3a' }}>{c.name}</span>
                   </div>
                 );
               })}
             </div>
-            <button onClick={() => navigate('/lobby')} className="px-8 py-3 bg-gold text-bg-deep font-stamp text-lg tracking-wider">
-              ANOTHER ROUND
-            </button>
+            <button className="btn green" onClick={() => navigate('/lobby')}>Another Round</button>
           </div>
         )}
-      </section>
+      </div>
 
-      {/* BOTTOM — My Hand + Actions */}
+      {/* Bottom — Hand + Actions */}
       {myPlayer?.alive && (state === 'PlayerTurn' || state === 'Challenging' || state === 'Spinning') && (
-        <footer className="relative z-20 bg-bg-surface/80 backdrop-blur border-t border-outline-variant p-4">
-          {/* My revolver */}
-          <div className="absolute top-2 left-4 flex items-center gap-1">
-            <span className="text-xs">🔫</span>
-            {Array.from({ length: 6 }, (_, i) => (
-              <div key={i} className={`w-2.5 h-2.5 rounded-full border ${i < (chamberPointers[address?.toLowerCase() || ''] || 0) ? 'bg-danger-deep border-danger-deep' : 'border-outline'}`} />
-            ))}
+        <div style={{ padding: '1rem 1.5rem', background: 'rgba(0,0,0,0.5)', borderTop: '1px solid #3a2a1a', zIndex: 20 }}>
+          <div className="chambers" style={{ justifyContent: 'center', marginBottom: '0.6rem' }}>
+            {Array.from({ length: 6 }, (_, i) => <div key={i} className={`chamber ${i < (chamberPointers[address?.toLowerCase() || ''] || 0) ? 'safe' : ''}`} style={{ width: 12, height: 12 }} />)}
           </div>
-
-          {/* Cards */}
-          <div className="flex justify-center gap-2 mb-3">
-            {myHand.map((card, i) => {
-              const isPlayed = playedCards.includes(i);
-              const isSelected = selectedCards.includes(i);
-              if (isPlayed) return <div key={i} className="w-14 h-20 rounded border border-outline-variant/30 bg-surface-container/20" />;
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '0.6rem', marginBottom: '0.8rem' }}>
+            {myHand.slice(0, mode === 'chaos' ? 3 : 5).map((card, i) => {
+              if (playedCards.includes(i)) return <div key={i} style={{ width: '5.5rem', aspectRatio: '1/1.4', borderRadius: '0.3rem', border: '1px dashed #3a2a1a', opacity: 0.15 }} />;
               return (
-                <button
-                  key={i}
+                <div key={i}
+                  className={`playing-card ${selectedCards.includes(i) ? 'selected' : ''}`}
+                  style={{ backgroundImage: card !== null ? `url(${CARD_IMGS[card]})` : 'url(/playing_card/back1.png)', width: '5.5rem', cursor: card !== null ? 'pointer' : 'default', opacity: card === null ? 0.5 : 1 }}
                   onClick={() => card !== null && toggleCard(i)}
-                  className={`w-14 h-20 rounded border-2 flex flex-col items-center justify-center font-bold transition-all
-                    ${isSelected ? 'border-gold bg-gold/10 -translate-y-3 shadow-[0_0_12px_rgba(201,168,76,0.3)]' : 'border-outline-variant bg-card-face/5 hover:border-brass'}
-                    ${card === null ? 'opacity-40' : 'cursor-pointer'}`}
-                >
-                  {card !== null ? (
-                    <>
-                      <span className="text-xl">{cardEmoji(card)}</span>
-                      <span className="text-[9px] text-on-surface-variant">{cardName(card)}</span>
-                    </>
-                  ) : (
-                    <span className="text-lg animate-pulse">🔒</span>
-                  )}
-                </button>
+                />
               );
             })}
           </div>
-
-          {/* Actions */}
           {state === 'PlayerTurn' && isMyTurn && (
-            <div className="flex justify-center gap-3">
-              {hasCardsLeft && (
-                <button onClick={playCards} disabled={selectedCards.length === 0}
-                  className="px-6 py-2 bg-gold text-bg-deep font-stamp tracking-wider disabled:opacity-30 hover:bg-amber-bright transition">
-                  PLAY {selectedCards.length || ''} AS {targetName(targetCard)}
-                </button>
-              )}
-              {hasClaimToChallenge && (
-                <button onClick={callLiar}
-                  className="px-6 py-2 bg-danger-deep border border-danger text-white font-stamp tracking-wider hover:bg-danger transition">
-                  🤥 LIAR!
-                </button>
-              )}
-              {!hasCardsLeft && !hasClaimToChallenge && (
-                <span className="font-mono text-xs text-text-muted">Waiting...</span>
-              )}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              {hasCardsLeft && <button className="btn green" style={{ fontSize: '1rem', padding: '0.6rem 1.5rem' }} disabled={selectedCards.length === 0} onClick={playCards}>Play {selectedCards.length || ''} as {targetName(targetCard)}</button>}
+              {hasClaimToChallenge && <button className="btn red" style={{ fontSize: '1rem', padding: '0.6rem 1.5rem' }} onClick={callLiar}>LIAR!</button>}
+              {!hasCardsLeft && !hasClaimToChallenge && <span style={{ fontSize: '0.8rem', color: '#8b7b5a' }}>Waiting...</span>}
             </div>
           )}
-          {state === 'PlayerTurn' && !isMyTurn && (
-            <p className="text-center font-mono text-xs text-text-muted">Waiting for {MASK_NAMES[currentTurnIndex]}...</p>
-          )}
-
-          {/* Decrypt button */}
-          {cofheReady && myHand.every(c => c === null) && state === 'PlayerTurn' && (
-            <button onClick={decryptHand} className="mt-2 mx-auto block font-mono text-[10px] text-brass hover:underline">
-              🔓 Decrypt Hand
-            </button>
-          )}
-        </footer>
+          {state === 'PlayerTurn' && !isMyTurn && <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#8b7b5a' }}>Waiting for {CHAR_NAMES[currentTurnIndex]}...</p>}
+        </div>
       )}
 
-      {/* CoFHE loading */}
       {!cofheReady && state !== 'WaitingForPlayers' && (
-        <div className="fixed bottom-4 left-4 z-40 font-mono text-[10px] text-amber-bright animate-pulse">
-          🔐 Initializing encryption...
+        <div style={{ position: 'fixed', bottom: 8, left: 8, zIndex: 40, fontSize: '0.6rem', color: '#c9a84c' }}>Initializing encryption...</div>
+      )}
+
+      {showRules && (
+        <div onClick={() => setShowRules(false)} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={(e) => e.stopPropagation()} className="paperboard-panel" style={{ padding: '1.5rem', width: 340 }}>
+            <h3 style={{ fontSize: '1.1rem', color: '#2a1a0a', marginBottom: '0.8rem' }}>{mode.charAt(0).toUpperCase() + mode.slice(1)} Mode</h3>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {RULES[mode].map((r, i) => (
+                <li key={i} style={{ fontSize: '0.75rem', color: '#3a2a1a', paddingLeft: '0.8rem', borderLeft: '2px solid #8b7b5a' }}>{r}</li>
+              ))}
+            </ul>
+            <button className="btn" onClick={() => setShowRules(false)} style={{ marginTop: '1rem', width: '100%', padding: '0.4rem' }}>Close</button>
+          </div>
         </div>
       )}
     </div>

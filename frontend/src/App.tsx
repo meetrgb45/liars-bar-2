@@ -16,7 +16,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/lobby" element={<Lobby />} />
-            <Route path="/game/:id" element={<GameRoom />} />
+            <Route path="/game/:mode/:id" element={<GameRoom />} />
           </Routes>
         </BrowserRouter>
       </QueryClientProvider>

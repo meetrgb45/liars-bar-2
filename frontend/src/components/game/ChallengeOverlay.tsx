@@ -1,9 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../stores/gameStore';
 import { targetName } from '../../lib/cardUtils';
-
-const MASKS = ['🦊', '🐰', '🐱', '🦉'];
-const MASK_NAMES = ['Fox', 'Rabbit', 'Cat', 'Owl'];
+import { CHARACTERS } from '../../lib/characters';
 
 type Phase = 'accusation' | 'revealing' | 'verdict-lie' | 'verdict-valid' | null;
 
@@ -17,8 +15,32 @@ interface Props {
 export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, onDismiss }: Props) {
   const lastClaimCount = useGameStore((s) => s.lastClaimCount);
   const targetCard = useGameStore((s) => s.targetCard);
+  const revealedCards = useGameStore((s) => s.revealedCards);
+  const players = useGameStore((s) => s.players);
+  const gameMode = useGameStore((s) => s.gameMode);
 
   if (!phase) return null;
+
+  // Get character from on-chain data
+  const charFor = (idx: number) => {
+    const p = players[idx];
+    if (p && p.characterId !== undefined) return CHARACTERS[p.characterId % CHARACTERS.length];
+    return CHARACTERS[idx % CHARACTERS.length];
+  };
+
+  const accuserChar = charFor(accuserIndex);
+  const accusedChar = charFor(accusedIndex);
+
+  // Card images depend on mode
+  const CARD_IMGS = gameMode === 'chaos'
+    ? ['/playing_card/king1.png', '/playing_card/queen1.png', '/playing_card/master1.png', '/playing_card/chaos1.png']
+    : ['/playing_card/ace1.png', '/playing_card/king1.png', '/playing_card/queen1.png', '/playing_card/joker1.png', '/playing_card/devil1.png'];
+
+  // Check if a card is valid (matches target or is wild)
+  const isCardValid = (card: number) => {
+    if (gameMode === 'chaos') return card === targetCard || card === 2 || card === 3; // master/chaos always valid
+    return card === targetCard || card === 3 || card === 4; // joker/devil always valid
+  };
 
   return (
     <AnimatePresence>
@@ -26,164 +48,103 @@ export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, on
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[90] flex flex-col items-center justify-center overflow-hidden"
+        style={{ position: 'fixed', inset: 0, zIndex: 90, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
         onClick={phase.startsWith('verdict') ? onDismiss : undefined}
       >
-        {/* Background */}
-        <div className="absolute inset-0 bg-black/90" style={{ background: 'radial-gradient(circle, transparent 40%, rgba(139,26,26,0.3) 100%), rgba(0,0,0,0.9)' }} />
-        <div className="absolute inset-0 grain-overlay"></div>
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle, transparent 40%, rgba(139,26,26,0.3) 100%), rgba(0,0,0,0.92)' }} />
 
-        {/* PHASE: ACCUSATION */}
+        {/* ACCUSATION */}
         {phase === 'accusation' && (
-          <motion.div
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', damping: 8 }}
-            className="relative z-10 flex flex-col items-center"
-          >
-            {/* LIAR heading */}
-            <motion.h1
-              animate={{ scale: [1, 1.05, 1] }}
-              transition={{ repeat: Infinity, duration: 2 }}
-              className="font-display text-[96px] text-danger uppercase italic tracking-tighter leading-none mb-12"
-              style={{ textShadow: '0 0 20px rgba(233,69,96,0.8), 0 0 40px rgba(139,26,26,0.6)' }}
-            >
+          <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', damping: 8 }} style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <motion.h1 animate={{ scale: [1, 1.05, 1] }} transition={{ repeat: Infinity, duration: 2 }} style={{ fontSize: '5rem', color: '#e94560', fontStyle: 'italic', textShadow: '0 0 20px rgba(233,69,96,0.8), 0 0 40px rgba(139,26,26,0.6)', marginBottom: '2rem' }}>
               LIAR!
             </motion.h1>
-
-            {/* VS Avatars */}
-            <div className="flex items-center gap-16">
-              {/* Accuser */}
-              <div className="flex flex-col items-center gap-3">
-                <div className="relative">
-                  <div className="w-28 h-28 rounded-full border-4 border-gold flex items-center justify-center text-5xl bg-surface shadow-[0_0_20px_rgba(201,168,76,0.4)]">
-                    {MASKS[accuserIndex]}
-                  </div>
-                  <div className="absolute -top-3 -right-3 bg-gold text-bg-deep font-stamp px-2 py-0.5 text-xs">
-                    ACCUSER
-                  </div>
-                </div>
-                <span className="font-stamp text-lg text-gold">{MASK_NAMES[accuserIndex]}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                <div className="player-card" style={{ backgroundImage: `url(${accuserChar.img})`, width: 100, height: 100, boxShadow: '0 0 20px rgba(201,168,76,0.4)' }} />
+                <span style={{ fontSize: '0.9rem', color: '#c9a84c' }}>{accuserChar.name}</span>
+                <span style={{ fontSize: '0.6rem', color: '#8b7b5a' }}>ACCUSER</span>
               </div>
-
-              {/* VS */}
-              <div className="flex flex-col items-center">
-                <span className="font-display text-3xl text-on-surface-variant italic">vs</span>
-              </div>
-
-              {/* Accused */}
-              <div className="flex flex-col items-center gap-3">
-                <div className="relative">
-                  <div className="w-28 h-28 rounded-full border-4 border-danger flex items-center justify-center text-5xl bg-surface shadow-[0_0_20px_rgba(139,26,26,0.4)]">
-                    {MASKS[accusedIndex]}
-                  </div>
-                  <div className="absolute -top-3 -right-3 bg-danger text-white font-stamp px-2 py-0.5 text-xs">
-                    ACCUSED
-                  </div>
-                </div>
-                <span className="font-stamp text-lg text-danger">{MASK_NAMES[accusedIndex]}</span>
+              <span style={{ fontSize: '1.5rem', color: '#8b7b5a', fontStyle: 'italic' }}>vs</span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                <div className="player-card" style={{ backgroundImage: `url(${accusedChar.img})`, width: 100, height: 100, boxShadow: '0 0 20px rgba(233,69,96,0.4)' }} />
+                <span style={{ fontSize: '0.9rem', color: '#e94560' }}>{accusedChar.name}</span>
+                <span style={{ fontSize: '0.6rem', color: '#8b7b5a' }}>ACCUSED</span>
               </div>
             </div>
-
-            {/* Claim info */}
-            <p className="mt-8 font-body text-on-surface-variant italic">
+            <p style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: '#8b7b5a', fontStyle: 'italic' }}>
               Claimed {lastClaimCount} {targetName(targetCard)}{lastClaimCount > 1 ? 's' : ''}
             </p>
           </motion.div>
         )}
 
-        {/* PHASE: REVEALING */}
+        {/* REVEALING */}
         {phase === 'revealing' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="relative z-10 flex flex-col items-center gap-8"
-          >
-            <h2 className="font-display text-3xl text-on-surface-variant italic">Revealing cards...</h2>
-            {/* Animated card flips */}
-            <div className="flex gap-3">
-              {Array.from({ length: lastClaimCount }, (_, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ rotateY: 0 }}
-                  animate={{ rotateY: [0, 90, 180, 270, 360] }}
-                  transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }}
-                  className="w-16 h-24 rounded border-2 border-outline-variant bg-card-back shadow-lg"
-                />
-              ))}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.5rem', color: '#dfd5b4', fontStyle: 'italic' }}>Revealing cards...</h2>
+            <div style={{ display: 'flex', gap: '0.8rem' }}>
+              {revealedCards.length > 0
+                ? revealedCards.map((card, i) => (
+                    <motion.div key={i} initial={{ rotateY: 180, scale: 0.8 }} animate={{ rotateY: 0, scale: 1 }} transition={{ delay: i * 0.3, type: 'spring' }}
+                      style={{ width: 70, height: 100, borderRadius: '0.4rem', backgroundImage: `url(${CARD_IMGS[card] || '/playing_card/back1.png'})`, backgroundSize: 'cover', backgroundPosition: 'center', border: `3px solid ${isCardValid(card) ? '#abcfb8' : '#e94560'}`, boxShadow: isCardValid(card) ? '0 0 12px rgba(171,207,184,0.5)' : '0 0 12px rgba(233,69,96,0.5)' }} />
+                  ))
+                : Array.from({ length: lastClaimCount }, (_, i) => (
+                    <motion.div key={i} animate={{ rotateY: [0, 360] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }}
+                      style={{ width: 70, height: 100, borderRadius: '0.4rem', backgroundImage: 'url(/playing_card/back1.png)', backgroundSize: 'cover', border: '2px solid #5a4a3a' }} />
+                  ))
+              }
             </div>
-            <p className="font-mono text-xs text-text-muted animate-pulse">Decrypting via FHE network...</p>
+            <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>{revealedCards.length > 0 ? 'Cards revealed!' : 'Decrypting via FHE network...'}</p>
           </motion.div>
         )}
 
-        {/* PHASE: VERDICT — LIE CONFIRMED */}
+        {/* VERDICT — LIE */}
         {phase === 'verdict-lie' && (
-          <motion.div
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', damping: 10 }}
-            className="relative z-10 flex flex-col items-center gap-6"
-          >
-            <motion.h1
-              animate={{ x: [0, -3, 3, -2, 2, 0] }}
-              transition={{ duration: 0.5 }}
-              className="font-display text-6xl text-danger uppercase font-black"
-              style={{ textShadow: '0 0 20px rgba(233,69,96,0.8)' }}
-            >
-              CAUGHT LYING!
-            </motion.h1>
-            <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-full border-4 border-danger flex items-center justify-center text-3xl bg-surface glow-danger">
-                {MASKS[accusedIndex]}
-              </div>
-              <div className="text-left">
-                <p className="font-stamp text-xl text-danger">{MASK_NAMES[accusedIndex]}</p>
-                <p className="font-body text-on-surface-variant">must face the revolver</p>
+          <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', damping: 10 }} style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+            <h1 style={{ fontSize: '3rem', color: '#e94560', textShadow: '0 0 20px rgba(233,69,96,0.8)' }}>CAUGHT LYING!</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div className="player-card" style={{ backgroundImage: `url(${accusedChar.img})`, width: 70, height: 70, boxShadow: '0 0 15px rgba(233,69,96,0.5)' }} />
+              <div>
+                <p style={{ fontSize: '1rem', color: '#e94560' }}>{accusedChar.name}</p>
+                <p style={{ fontSize: '0.8rem', color: '#8b7b5a' }}>must face the revolver</p>
               </div>
             </div>
-            {/* Fake revealed cards with X marks */}
-            <div className="flex gap-2 mt-4">
-              {Array.from({ length: lastClaimCount }, (_, i) => (
-                <div key={i} className="w-14 h-20 rounded border-2 border-danger bg-card-face/10 flex items-center justify-center">
-                  <span className="text-2xl text-danger">✗</span>
-                </div>
-              ))}
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+              {revealedCards.length > 0
+                ? revealedCards.map((card, i) => (
+                    <div key={i} style={{ width: 56, height: 80, borderRadius: '0.3rem', backgroundImage: `url(${CARD_IMGS[card] || '/playing_card/back1.png'})`, backgroundSize: 'cover', border: `2px solid ${isCardValid(card) ? '#abcfb8' : '#e94560'}` }} />
+                  ))
+                : Array.from({ length: lastClaimCount }, (_, i) => (
+                    <div key={i} style={{ width: 56, height: 80, borderRadius: '0.3rem', backgroundImage: 'url(/playing_card/back1.png)', backgroundSize: 'cover', border: '2px solid #e94560' }} />
+                  ))
+              }
             </div>
-            <p className="font-mono text-[10px] text-text-muted mt-4 animate-pulse">tap to continue</p>
+            <p style={{ fontSize: '0.6rem', color: '#5a4a3a', marginTop: '1rem' }}>tap to continue</p>
           </motion.div>
         )}
 
-        {/* PHASE: VERDICT — ALL VALID (false accusation) */}
+        {/* VERDICT — VALID */}
         {phase === 'verdict-valid' && (
-          <motion.div
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', damping: 10 }}
-            className="relative z-10 flex flex-col items-center gap-6"
-          >
-            <h1 className="font-display text-6xl text-secondary uppercase font-black"
-              style={{ textShadow: '0 0 20px rgba(171,207,184,0.5)' }}
-            >
-              ALL VALID ✓
-            </h1>
-            <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-full border-4 border-danger flex items-center justify-center text-3xl bg-surface glow-danger">
-                {MASKS[accuserIndex]}
-              </div>
-              <div className="text-left">
-                <p className="font-stamp text-xl text-danger">{MASK_NAMES[accuserIndex]}</p>
-                <p className="font-body text-on-surface-variant">false accusation — must face the revolver</p>
+          <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', damping: 10 }} style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+            <h1 style={{ fontSize: '3rem', color: '#abcfb8', textShadow: '0 0 20px rgba(171,207,184,0.5)' }}>ALL VALID</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div className="player-card" style={{ backgroundImage: `url(${accuserChar.img})`, width: 70, height: 70, boxShadow: '0 0 15px rgba(233,69,96,0.5)' }} />
+              <div>
+                <p style={{ fontSize: '1rem', color: '#e94560' }}>{accuserChar.name}</p>
+                <p style={{ fontSize: '0.8rem', color: '#8b7b5a' }}>false accusation — must face the revolver</p>
               </div>
             </div>
-            {/* Fake revealed cards with checkmarks */}
-            <div className="flex gap-2 mt-4">
-              {Array.from({ length: lastClaimCount }, (_, i) => (
-                <div key={i} className="w-14 h-20 rounded border-2 border-secondary bg-card-face/10 flex items-center justify-center">
-                  <span className="text-2xl text-secondary">✓</span>
-                </div>
-              ))}
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+              {revealedCards.length > 0
+                ? revealedCards.map((card, i) => (
+                    <div key={i} style={{ width: 56, height: 80, borderRadius: '0.3rem', backgroundImage: `url(${CARD_IMGS[card] || '/playing_card/back1.png'})`, backgroundSize: 'cover', border: '2px solid #abcfb8' }} />
+                  ))
+                : Array.from({ length: lastClaimCount }, (_, i) => (
+                    <div key={i} style={{ width: 56, height: 80, borderRadius: '0.3rem', backgroundImage: 'url(/playing_card/back1.png)', backgroundSize: 'cover', border: '2px solid #abcfb8' }} />
+                  ))
+              }
             </div>
-            <p className="font-mono text-[10px] text-text-muted mt-4 animate-pulse">tap to continue</p>
+            <p style={{ fontSize: '0.6rem', color: '#5a4a3a', marginTop: '1rem' }}>tap to continue</p>
           </motion.div>
         )}
       </motion.div>

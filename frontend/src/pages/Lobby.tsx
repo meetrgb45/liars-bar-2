@@ -1,9 +1,44 @@
 import { useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWriteContract, usePublicClient } from 'wagmi';
 import { useNavigate } from 'react-router-dom';
-import { GAME_ADDRESS, GAME_ABI } from '../lib/contracts';
+import {
+  GAME_ADDRESS, GAME_ABI,
+  DEVIL_GAME_ADDRESS, DEVIL_GAME_ABI,
+  CHAOS_GAME_ADDRESS, CHAOS_GAME_ABI,
+  USDC_ADDRESS, USDC_ABI,
+} from '../lib/contracts';
+import { CHARACTERS } from '../lib/characters';
+import { useGameStore } from '../stores/gameStore';
 import { shortenAddress } from '../lib/cardUtils';
 import { getGasOverrides } from '../lib/gas';
+
+type Mode = 'basic' | 'devil' | 'chaos';
+
+const MODE_CONFIG: Record<Mode, { address: `0x${string}`; abi: any; label: string; rules: string[] }> = {
+  basic: { address: GAME_ADDRESS, abi: GAME_ABI, label: 'Basic', rules: [
+    '20 cards: 6 Aces, 6 Kings, 6 Queens, 2 Jokers',
+    '5 cards dealt to each player',
+    'Play 1-3 cards per turn, claim they match the table card',
+    'Jokers are always valid (wild)',
+    'Call LIAR to challenge — loser faces Russian Roulette',
+    'Last player standing wins',
+  ]},
+  devil: { address: DEVIL_GAME_ADDRESS, abi: DEVIL_GAME_ABI, label: 'Devil', rules: [
+    'Same as Basic, plus one Devil Card in the deck',
+    'Devil Card replaces one table-type card',
+    'Devil can ONLY be played alone (1 card)',
+    'If challenged and Devil is revealed — ALL other players face Roulette',
+    'The Devil player is safe from retribution',
+  ]},
+  chaos: { address: CHAOS_GAME_ADDRESS, abi: CHAOS_GAME_ABI, label: 'Chaos', rules: [
+    '12 cards: 5 Kings, 5 Queens, 1 Master, 1 Chaos',
+    '3 cards per player, play exactly 1 per turn',
+    'Winner of challenge SHOOTS an opponent of choice',
+    'Master Card: accused gets to shoot someone',
+    'Chaos Card: ALL players shoot an opponent simultaneously',
+    'Master and Chaos are never considered lies',
+  ]},
+};
 
 export default function Lobby() {
   const { address, isConnected } = useAccount();
@@ -12,115 +47,185 @@ export default function Lobby() {
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
   const navigate = useNavigate();
+  const myCharacter = useGameStore((s) => s.myCharacter);
+  const setMyCharacter = useGameStore((s) => s.setMyCharacter);
+  const [mode, setMode] = useState<Mode>('basic');
   const [joinId, setJoinId] = useState('');
+  const [stakeInput, setStakeInput] = useState('');
   const [loading, setLoading] = useState('');
   const [error, setError] = useState('');
+  const [showRules, setShowRules] = useState(false);
+
+  const modeContract = MODE_CONFIG[mode];
 
   const createGame = async () => {
-    setLoading('Creating...');
-    setError('');
+    setLoading('Creating...'); setError('');
     try {
       const gas = await getGasOverrides(publicClient!);
-      const hash = await writeContractAsync({ address: GAME_ADDRESS, abi: GAME_ABI, functionName: 'createGame', ...gas });
+      const stakeAmount = stakeInput ? BigInt(Math.floor(parseFloat(stakeInput) * 1e6)) : 0n;
+      if (stakeAmount > 0n) {
+        setLoading('Approving USDC...');
+        const approveHash = await writeContractAsync({ address: USDC_ADDRESS, abi: USDC_ABI, functionName: 'approve', args: [modeContract.address, stakeAmount], ...gas });
+        await publicClient!.waitForTransactionReceipt({ hash: approveHash });
+        setLoading('Creating...');
+      }
+      const hash = await writeContractAsync({ address: modeContract.address, abi: modeContract.abi, functionName: 'createGame', args: [myCharacter, stakeAmount], ...gas });
       const receipt = await publicClient!.waitForTransactionReceipt({ hash });
-      const log = receipt.logs[0];
+      // Find GameCreated event (topic0 = keccak256("GameCreated(uint256,address)"))
+      const gameCreatedTopic = '0x1b4e6c3e3b2e2e3e'; // fallback: just use first log with 2+ topics from game contract
+      const gameLogs = receipt.logs.filter(l => l.address.toLowerCase() === modeContract.address.toLowerCase());
+      const log = gameLogs[0];
       const gameId = log?.topics[1] ? Number(BigInt(log.topics[1])) : 0;
-      navigate(`/game/${gameId}`);
-    } catch (e: any) { console.error(e); setError(e.shortMessage || e.message); }
+      navigate(`/game/${mode}/${gameId}`);
+    } catch (e: any) { setError(e.shortMessage || e.message); }
     setLoading('');
   };
 
   const joinGame = async () => {
     if (!joinId) return;
-    setLoading('Joining...');
-    setError('');
+    setLoading('Joining...'); setError('');
     try {
       const gas = await getGasOverrides(publicClient!);
-      const hash = await writeContractAsync({ address: GAME_ADDRESS, abi: GAME_ABI, functionName: 'joinGame', args: [BigInt(joinId)], ...gas });
+      const stakeAmount = await publicClient!.readContract({
+        address: modeContract.address, abi: modeContract.abi, functionName: 'getStakeAmount', args: [BigInt(joinId)],
+      }) as bigint;
+      if (stakeAmount > 0n) {
+        setLoading('Approving USDC...');
+        const approveHash = await writeContractAsync({ address: USDC_ADDRESS, abi: USDC_ABI, functionName: 'approve', args: [modeContract.address, stakeAmount], ...gas });
+        await publicClient!.waitForTransactionReceipt({ hash: approveHash });
+        setLoading('Joining...');
+      }
+      const hash = await writeContractAsync({ address: modeContract.address, abi: modeContract.abi, functionName: 'joinGame', args: [BigInt(joinId), myCharacter], ...gas });
       await publicClient!.waitForTransactionReceipt({ hash });
-      navigate(`/game/${joinId}`);
-    } catch (e: any) { console.error(e); setError(e.shortMessage || e.message); }
+      navigate(`/game/${mode}/${joinId}`);
+    } catch (e: any) { setError(e.shortMessage || e.message); }
     setLoading('');
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center">
-      <div className="fixed inset-0 grain-overlay z-50"></div>
-      <div className="fixed inset-0 smoke-effect pointer-events-none z-10"></div>
+    <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+      <div className="cards-bg">
+        {Array.from({ length: 16 }, (_, i) => {
+          const cards = ['ace1','king1','queen1','joker1','back1'];
+          return (
+            <div key={i} className="floating-card" style={{
+              backgroundImage: `url(/playing_card/${cards[i % cards.length]}.png)`,
+              left: `${Math.random() * 94 + 3}%`, top: `${Math.random() * 94 + 3}%`,
+              ['--rot' as any]: `${Math.floor(Math.random() * 90 - 45)}deg`,
+              animationDelay: `${i * 0.04}s`,
+            }} />
+          );
+        })}
+      </div>
 
-      <div className="relative z-30 w-full max-w-md px-4">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <button onClick={() => navigate('/')} className="font-display text-3xl text-primary italic neon-glow">
-            Liar's Deck
-          </button>
-          <p className="font-body text-sm text-text-muted mt-2">Choose your table wisely</p>
+      <div className="paperboard-panel" style={{ position: 'relative', zIndex: 10, width: 440, padding: '2rem', paddingTop: '5rem' }}>
+        {/* Logo */}
+        <div style={{ position: 'absolute', top: '-3rem', left: 0, width: '100%', display: 'flex', justifyContent: 'center' }}>
+          <div className="game-logo" style={{ position: 'relative' }}>
+            <h1 style={{ margin: '2.5rem 3rem', fontSize: '1.6rem', color: '#fff7db', textShadow: '0 0 1px #402011, 0 1px 1px #b27e66, 0 1px 2px #311208, 0 3px 8px #642b18' }}>
+              Bluff and Barrel
+            </h1>
+            <img src="/banner.png" alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: -1, filter: 'drop-shadow(0 1px 1px #604c3d) drop-shadow(0 0 2px #281503) drop-shadow(0 4px 16px #361e08)' }} />
+          </div>
         </div>
 
-        {/* Card */}
-        <div className="bg-bg-surface border border-outline-variant rounded-lg p-8 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
+          {/* Mode selector */}
+          <div style={{ display: 'flex', gap: '0.5rem', width: '100%', alignItems: 'center' }}>
+            {(Object.keys(MODE_CONFIG) as Mode[]).map((m) => (
+              <button key={m} onClick={() => setMode(m)} className={`btn ${mode === m ? 'green' : ''}`} style={{
+                flex: 1, padding: '0.55rem 0', fontSize: '0.85rem',
+                opacity: mode === m ? 1 : 0.6,
+              }}>
+                {MODE_CONFIG[m].label}
+              </button>
+            ))}
+            <button onClick={() => setShowRules(true)} style={{ width: 32, height: 32, borderRadius: '50%', background: '#1a1008', border: '2px solid #5a4a3a', color: '#c9a84c', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>?</button>
+          </div>
+
           {!isConnected ? (
-            <button
-              onClick={() => connect({ connector: connectors[0] })}
-              className="w-full py-4 brass-border font-stamp text-lg text-primary bg-surface-container-low hover:bg-surface-variant transition-colors flex items-center justify-center gap-2"
-            >
-              <span className="material-symbols-outlined">account_balance_wallet</span>
-              ENTER THE BAR
+            <button className="btn green" style={{ width: '100%', fontSize: '1.2rem', padding: '0.8rem' }} onClick={() => connect({ connector: connectors[0] })}>
+              Connect Wallet
             </button>
           ) : (
-            <div className="space-y-6">
-              {/* Wallet */}
-              <div className="flex justify-between items-center pb-4 border-b border-outline-variant">
-                <span className="font-mono text-xs text-text-address">{shortenAddress(address!)}</span>
-                <button onClick={() => disconnect()} className="font-mono text-[10px] text-text-muted hover:text-danger transition">
-                  DISCONNECT
-                </button>
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', paddingBottom: '0.6rem', borderBottom: '1px solid rgba(90,70,50,0.3)' }}>
+                <span style={{ fontSize: '0.7rem', color: '#5a4a3a', fontFamily: 'monospace' }}>{shortenAddress(address!)}</span>
+                <button onClick={() => disconnect()} style={{ fontSize: '0.6rem', color: '#8b7b5a', cursor: 'pointer', textDecoration: 'underline', background: 'none' }}>Disconnect</button>
               </div>
 
-              {/* Create */}
-              <button
-                onClick={createGame}
-                disabled={!!loading}
-                className="w-full py-4 bg-gold text-bg-deep font-stamp text-xl tracking-wider hover:bg-amber-bright transition-colors disabled:opacity-50"
-              >
-                {loading === 'Creating...' ? '⏳ CREATING...' : '🃏 NEW TABLE'}
+              {/* Character carousel */}
+              <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <button onClick={() => setMyCharacter((myCharacter - 1 + CHARACTERS.length) % CHARACTERS.length)} style={{ width: 40, height: 40, borderRadius: '50%', background: '#2a1a0a', border: 'none', color: '#dfd5b4', fontSize: '1.3rem', cursor: 'pointer' }}>&lt;</button>
+                {/* Previous */}
+                <div style={{ width: 65, height: 65, borderRadius: '0.3rem', overflow: 'hidden', opacity: 0.4, filter: 'blur(1.5px)', flexShrink: 0 }}>
+                  <img src={CHARACTERS[(myCharacter - 1 + CHARACTERS.length) % CHARACTERS.length].img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                {/* Current */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
+                  <div style={{ width: 100, height: 100, borderRadius: '0.4rem', overflow: 'hidden', boxShadow: '0 0 14px #c9a84c40' }}>
+                    <img src={CHARACTERS[myCharacter].img} alt={CHARACTERS[myCharacter].name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                  <span style={{ fontSize: '0.9rem', color: '#dfd5b4', fontWeight: 600 }}>{CHARACTERS[myCharacter].name}</span>
+                </div>
+                {/* Next */}
+                <div style={{ width: 65, height: 65, borderRadius: '0.3rem', overflow: 'hidden', opacity: 0.4, filter: 'blur(1.5px)', flexShrink: 0 }}>
+                  <img src={CHARACTERS[(myCharacter + 1) % CHARACTERS.length].img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                <button onClick={() => setMyCharacter((myCharacter + 1) % CHARACTERS.length)} style={{ width: 40, height: 40, borderRadius: '50%', background: '#2a1a0a', border: 'none', color: '#dfd5b4', fontSize: '1.3rem', cursor: 'pointer' }}>&gt;</button>
+              </div>
+
+              <button className="btn green" style={{ fontSize: '1.2rem', padding: '0.7rem 2rem', width: '100%' }} onClick={createGame} disabled={!!loading}>
+                {loading || 'New Table'}
               </button>
 
-              {/* Divider */}
-              <div className="flex items-center gap-4">
-                <div className="flex-1 h-[1px] bg-outline-variant"></div>
-                <span className="font-mono text-[10px] text-text-muted">OR JOIN</span>
-                <div className="flex-1 h-[1px] bg-outline-variant"></div>
+              {/* Stake input */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+                <span style={{ fontSize: '0.7rem', color: '#8b7b5a', whiteSpace: 'nowrap' }}>Stake (USDC)</span>
+                <input placeholder="0 = free" value={stakeInput} onChange={(e) => setStakeInput(e.target.value)}
+                  style={{ flex: 1, padding: '0.5rem 0.8rem', borderRadius: '0.3rem', background: '#3b260031', color: '#fff', fontSize: '0.9rem', boxShadow: '0 0 2px #85733f, 0 2px 8px #514522 inset' }} />
               </div>
 
-              {/* Join */}
-              <div className="flex gap-3">
-                <input
-                  type="number"
-                  placeholder="Table #"
-                  value={joinId}
-                  onChange={(e) => setJoinId(e.target.value)}
-                  className="flex-1 px-4 py-3 bg-surface-container border border-outline-variant text-on-surface font-mono text-sm focus:border-brass focus:outline-none transition"
-                />
-                <button
-                  onClick={joinGame}
-                  disabled={!!loading || !joinId}
-                  className="px-6 py-3 bg-secondary text-on-secondary font-stamp tracking-wider hover:opacity-90 transition disabled:opacity-50"
-                >
-                  {loading === 'Joining...' ? '⏳' : 'SIT DOWN'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', width: '100%' }}>
+                <div style={{ flex: 1, height: 1, background: '#8b7b5a40' }} />
+                <span style={{ color: '#8b7b5a', fontSize: '0.7rem' }}>OR JOIN</span>
+                <div style={{ flex: 1, height: 1, background: '#8b7b5a40' }} />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                <input placeholder="Table #" value={joinId} onChange={(e) => setJoinId(e.target.value)}
+                  style={{ flex: 1, padding: '0.6rem 1rem', borderRadius: '0.4rem', background: '#3b260031', color: '#fff', fontSize: '1rem', boxShadow: '0 0 2px #85733f, 0 2px 8px #514522 inset, 0 0 6px #b9974d inset' }} />
+                <button className="btn" style={{ padding: '0.6rem 1.2rem' }} onClick={joinGame} disabled={!!loading || !joinId}>
+                  {loading === 'Joining...' ? '...' : 'Sit Down'}
                 </button>
               </div>
 
-              {/* Error */}
               {error && (
-                <div className="p-3 border border-danger-deep bg-danger-deep/10 text-error font-mono text-xs break-all">
+                <div style={{ width: '100%', padding: '0.5rem', background: 'rgba(139,26,26,0.2)', border: '1px solid #8b1a1a', borderRadius: '0.3rem', fontSize: '0.65rem', color: '#ffb4ab', wordBreak: 'break-all' }}>
                   {error}
                 </div>
               )}
-            </div>
+            </>
           )}
+
+          <p style={{ color: '#7a6a5a', fontSize: '0.65rem', marginTop: '0.3rem' }}>4 Players • FHE Encrypted • Arb Sepolia</p>
         </div>
       </div>
+
+      {/* Rules modal */}
+      {showRules && (
+        <div onClick={() => setShowRules(false)} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={(e) => e.stopPropagation()} className="paperboard-panel" style={{ width: 380, padding: '1.5rem', maxHeight: '80vh', overflow: 'auto' }}>
+            <h2 style={{ fontSize: '1.3rem', color: '#2a1a0a', marginBottom: '1rem', textAlign: 'center' }}>{MODE_CONFIG[mode].label} Mode Rules</h2>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {MODE_CONFIG[mode].rules.map((rule, i) => (
+                <li key={i} style={{ fontSize: '0.8rem', color: '#3a2a1a', paddingLeft: '1rem', borderLeft: '2px solid #8b7b5a' }}>{rule}</li>
+              ))}
+            </ul>
+            <button className="btn" onClick={() => setShowRules(false)} style={{ marginTop: '1.2rem', width: '100%', padding: '0.5rem' }}>Got it</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

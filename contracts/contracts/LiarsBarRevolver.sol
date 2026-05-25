@@ -20,25 +20,37 @@ contract LiarsBarRevolver is ILiarsBarGame {
     mapping(uint256 => mapping(address => uint8)) public chamberPointer;
     // Pending spin ctHash
     mapping(uint256 => uint256) public pendingSpinCtHash;
+    // Per-player pending ctHash (for multi-spin scenarios)
+    mapping(uint256 => mapping(address => uint256)) public pendingPlayerCtHash;
     // Pending double spin second ctHash
     mapping(uint256 => uint256) public pendingDoubleCt;
     // Whether current pending is double
     mapping(uint256 => bool) public isDoubleSpin;
 
     address public gameContract;
+    mapping(address => bool) public authorizedGames;
+    address public owner;
 
     modifier onlyGame() {
-        require(msg.sender == gameContract, "Only game");
+        require(authorizedGames[msg.sender], "Only game");
         _;
     }
 
     constructor(address _gameContract) {
+        owner = msg.sender;
         gameContract = _gameContract;
+        if (_gameContract != address(0)) authorizedGames[_gameContract] = true;
     }
 
     function setGameContract(address _gameContract) external {
-        require(gameContract == address(0) || gameContract == msg.sender, "Unauthorized");
+        require(msg.sender == owner || msg.sender == gameContract, "Unauthorized");
         gameContract = _gameContract;
+        authorizedGames[_gameContract] = true;
+    }
+
+    function addGameContract(address _gameContract) external {
+        require(msg.sender == owner, "Only owner");
+        authorizedGames[_gameContract] = true;
     }
 
     /**
@@ -74,7 +86,26 @@ contract LiarsBarRevolver is ILiarsBarGame {
 
         ctHash = uint256(ebool.unwrap(fired));
         pendingSpinCtHash[gameId] = ctHash;
+        pendingPlayerCtHash[gameId][player] = ctHash;
         pendingDoubleCt[gameId] = 0;
+    }
+
+    /**
+     * @notice Spin the TARGET's revolver (for Chaos mode — shoot opponent).
+     *         Advances target's chamber pointer, checks target's bullet.
+     */
+    function spinForTarget(uint256 gameId, address target) external onlyGame returns (uint256 ctHash) {
+        uint8 ptr = chamberPointer[gameId][target] + 1;
+        require(ptr <= CHAMBERS, "All chambers exhausted");
+
+        chamberPointer[gameId][target] = ptr;
+
+        ebool fired = FHE.eq(_bulletPosition[gameId][target], FHE.asEuint8(ptr));
+        FHE.allowPublic(fired);
+
+        ctHash = uint256(ebool.unwrap(fired));
+        pendingPlayerCtHash[gameId][target] = ctHash;
+        pendingSpinCtHash[gameId] = ctHash; // also set global for backward compat
     }
 
     /**
@@ -110,9 +141,14 @@ contract LiarsBarRevolver is ILiarsBarGame {
         uint256 result,
         bytes calldata signature
     ) external {
-        require(ctHash == pendingSpinCtHash[gameId], "Wrong ctHash");
+        // Accept if matches global OR per-player ctHash
+        require(
+            ctHash == pendingSpinCtHash[gameId] || ctHash == pendingPlayerCtHash[gameId][player],
+            "Wrong ctHash"
+        );
         FHE.publishDecryptResult(ctHash, result, signature);
-        delete pendingSpinCtHash[gameId];
+        if (ctHash == pendingSpinCtHash[gameId]) delete pendingSpinCtHash[gameId];
+        delete pendingPlayerCtHash[gameId][player];
     }
 
     /**

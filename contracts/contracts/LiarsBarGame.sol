@@ -6,6 +6,11 @@ import "./interfaces/ILiarsBarGame.sol";
 import "./LiarsBarDeck.sol";
 import "./LiarsBarRevolver.sol";
 
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function transfer(address to, uint256 amount) external returns (bool);
+}
+
 /**
  * @title LiarsBarGame
  * @notice Full Liar's Bar orchestrator — 4-player elimination card bluffing.
@@ -30,6 +35,7 @@ contract LiarsBarGame is ILiarsBarGame {
         uint8 points;
         bool hasUsedExecute;
         bool hasUsedDoubleSpin;
+        uint8 characterId;
     }
 
     struct Game {
@@ -50,34 +56,51 @@ contract LiarsBarGame is ILiarsBarGame {
         address winner;
         // Turn timer
         uint256 turnDeadline;       // block.timestamp when current turn expires
+        // Stake
+        uint256 stakeAmount;        // USDC per player (0 = free game)
     }
 
-    uint256 public constant TURN_TIMEOUT = 30; // 30 seconds per turn
+    uint256 public constant TURN_TIMEOUT = 60; // 60 seconds per turn
+    uint256 public constant FEE_BPS = 500;     // 5% platform fee
 
     mapping(uint256 => Game) public games;
     uint256 public nextGameId;
 
+    // Card reveal
+    mapping(uint256 => uint256[]) public revealCtHashes;
+    mapping(uint256 => uint8[]) public revealedCards;
+
+    event CardsRevealed(uint256 indexed gameId, uint8[] cardValues, bool wasLie);
+
     LiarsBarDeck public deck;
     LiarsBarRevolver public revolver;
+    IERC20 public usdc;
+    address public treasury;
 
-    constructor(address _deck, address _revolver) {
+    constructor(address _deck, address _revolver, address _usdc, address _treasury) {
         deck = LiarsBarDeck(_deck);
         revolver = LiarsBarRevolver(_revolver);
+        usdc = IERC20(_usdc);
+        treasury = _treasury;
     }
 
     // ─── Lobby ────────────────────────────────────────────────────────────
 
-    function createGame() external returns (uint256 gameId) {
+    function createGame(uint8 characterId, uint256 stakeAmount) external returns (uint256 gameId) {
         gameId = nextGameId++;
         Game storage g = games[gameId];
         g.state = GameState.WaitingForPlayers;
-        g.players[0] = Player(msg.sender, true, 0, false, false);
+        g.players[0] = Player(msg.sender, true, 0, false, false, characterId);
         g.aliveCount = 1;
+        g.stakeAmount = stakeAmount;
+        if (stakeAmount > 0) {
+            require(usdc.transferFrom(msg.sender, address(this), stakeAmount), "USDC transfer failed");
+        }
         emit GameCreated(gameId, msg.sender);
         emit PlayerJoined(gameId, msg.sender, 0);
     }
 
-    function joinGame(uint256 gameId) external {
+    function joinGame(uint256 gameId, uint8 characterId) external {
         Game storage g = games[gameId];
         if (g.state != GameState.WaitingForPlayers) revert NotInCorrectPhase();
 
@@ -89,8 +112,11 @@ contract LiarsBarGame is ILiarsBarGame {
             if (g.players[i].addr == msg.sender) revert AlreadyJoined();
         }
 
-        g.players[idx] = Player(msg.sender, true, 0, false, false);
+        g.players[idx] = Player(msg.sender, true, 0, false, false, characterId);
         g.aliveCount++;
+        if (g.stakeAmount > 0) {
+            require(usdc.transferFrom(msg.sender, address(this), g.stakeAmount), "USDC transfer failed");
+        }
         emit PlayerJoined(gameId, msg.sender, idx);
     }
 
@@ -153,6 +179,13 @@ contract LiarsBarGame is ILiarsBarGame {
 
         g.state = GameState.Challenging;
         g.turnDeadline = block.timestamp + TURN_TIMEOUT;
+
+        // Make challenged cards publicly decryptable for reveal
+        uint256[] memory cardCts = deck.revealCards(
+            gameId * 100 + g.round, g.lastClaimant, g.lastPlayedIndices
+        );
+        revealCtHashes[gameId] = cardCts;
+        delete revealedCards[gameId];
 
         // Verify claim via encrypted card check
         uint256 ctHash = deck.verifyClaim(
@@ -351,13 +384,54 @@ contract LiarsBarGame is ILiarsBarGame {
         }
     }
 
+    /**
+     * @notice Publish decrypted card values for the challenge reveal.
+     *         Called by frontend after decrypting each card's ctHash.
+     */
+    function publishCardReveal(
+        uint256 gameId,
+        uint256[] calldata ctHashes,
+        uint256[] calldata results,
+        bytes[] calldata signatures
+    ) external {
+        Game storage g = games[gameId];
+        require(ctHashes.length == results.length && results.length == signatures.length, "Length mismatch");
+
+        uint8[] memory cards = new uint8[](results.length);
+        bool wasLie = false;
+        for (uint256 i = 0; i < results.length; i++) {
+            FHE.publishDecryptResult(ctHashes[i], results[i], signatures[i]);
+            cards[i] = uint8(results[i]);
+            // Check if card doesn't match target and isn't joker
+            if (results[i] != g.targetCard && results[i] != 3) {
+                wasLie = true;
+            }
+        }
+        revealedCards[gameId] = cards;
+        emit CardsRevealed(gameId, cards, wasLie);
+    }
+
+    /**
+     * @notice Get the ctHashes for challenged cards (for frontend to decrypt).
+     */
+    function getRevealCtHashes(uint256 gameId) external view returns (uint256[] memory) {
+        return revealCtHashes[gameId];
+    }
+
+    /**
+     * @notice Get the revealed card values after challenge.
+     */
+    function getRevealedCards(uint256 gameId) external view returns (uint8[] memory) {
+        return revealedCards[gameId];
+    }
+
     // ─── View Functions ───────────────────────────────────────────────────
 
     function getPlayer(uint256 gameId, uint8 index) external view returns (
-        address addr, bool alive, uint8 points, bool usedExecute, bool usedDoubleSpin
+        address addr, bool alive, uint8 points, bool usedExecute, bool usedDoubleSpin, uint8 characterId
     ) {
         Player storage p = games[gameId].players[index];
-        return (p.addr, p.alive, p.points, p.hasUsedExecute, p.hasUsedDoubleSpin);
+        return (p.addr, p.alive, p.points, p.hasUsedExecute, p.hasUsedDoubleSpin, p.characterId);
     }
 
     function getGameState(uint256 gameId) external view returns (
@@ -385,6 +459,10 @@ contract LiarsBarGame is ILiarsBarGame {
 
     function getTurnDeadline(uint256 gameId) external view returns (uint256) {
         return games[gameId].turnDeadline;
+    }
+
+    function getStakeAmount(uint256 gameId) external view returns (uint256) {
+        return games[gameId].stakeAmount;
     }
 
     // ─── Internal ─────────────────────────────────────────────────────────
@@ -467,6 +545,13 @@ contract LiarsBarGame is ILiarsBarGame {
                 if (g.players[i].alive) {
                     g.winner = g.players[i].addr;
                     g.state = GameState.GameOver;
+                    // Payout
+                    if (g.stakeAmount > 0) {
+                        uint256 pot = g.stakeAmount * 4;
+                        uint256 fee = (pot * FEE_BPS) / 10000;
+                        usdc.transfer(treasury, fee);
+                        usdc.transfer(g.winner, pot - fee);
+                    }
                     emit GameOver(gameId, g.winner);
                     return;
                 }

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
-import { initCofhe } from '../lib/cofhe';
+import { initCofhe, getClient } from '../lib/cofhe';
 import { useGameStore } from '../stores/gameStore';
 
 export function useCofhe() {
@@ -17,9 +17,19 @@ export function useCofhe() {
       try {
         const client = await initCofhe(publicClient, walletClient, address);
         if (client) {
-          // Create self-permit for decryption
+          // Remove any stale permits from previous sessions, then create fresh
+          try {
+            const chainId = await publicClient.getChainId();
+            const permits = await client.permits.getPermits(chainId, address);
+            if (permits) {
+              for (const hash of Object.keys(permits)) {
+                await client.permits.removePermit(chainId, address, hash);
+              }
+            }
+          } catch {}
+          // Create fresh self-permit
           await client.permits.getOrCreateSelfPermit();
-          console.log('[useCofhe] permit ready');
+          console.log('[useCofhe] fresh permit created');
           setCofheReady(true);
         }
       } catch (e) {

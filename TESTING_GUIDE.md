@@ -1,12 +1,11 @@
-# Liar's Bar — Testing Guide for Judges
+# Bluff and Barrel — Testing Guide
 
 ## Prerequisites
 
 1. **4 browser windows/tabs** with MetaMask (4 different accounts)
 2. **Arbitrum Sepolia ETH** on all 4 accounts ([faucet](https://www.alchemy.com/faucets/arbitrum-sepolia))
-3. **MetaMask** connected to Arbitrum Sepolia (Chain ID: 421614)
-
-> **Tip:** Use MetaMask's "Create Account" to make 4 accounts in one browser, then open 4 tabs.
+3. **USDC on Arb Sepolia** (for staked games — optional, can play free)
+4. **MetaMask** connected to Arbitrum Sepolia (Chain ID: 421614)
 
 ---
 
@@ -14,130 +13,122 @@
 
 ### 1. Access the Game
 
-Open http://localhost:5173 (or deployed URL) in 4 browser tabs.
-
-Each tab should use a different MetaMask account.
+Open the app in 4 browser tabs. Each tab uses a different MetaMask account.
 
 ### 2. Landing Page
 
-- You'll see the landing page with 3 game modes
-- "Liar's Deck" is LIVE, others show "Coming Soon"
-- Click **"PLAY NOW"** on Liar's Deck
+- "Card and Barrel" is LIVE with 3 sub-modes (Basic, Devil, Chaos)
+- "Dice and Barrel" and "Slot and Barrel" show Coming Soon
+- Click **"PLAY NOW"** on Card and Barrel
 
-### 3. Create a Table (Player 1)
+### 3. Lobby — Choose Mode and Character
 
-- In Tab 1: Click **"NEW TABLE"**
-- Sign the MetaMask transaction
-- Wait for confirmation → you'll be redirected to the game room
-- Note the **Table ID** shown on screen
+- Select game mode: **Basic**, **Devil**, or **Chaos**
+- Click **?** button to read rules for each mode
+- Use the character carousel to pick your mask (8 options)
+- Set USDC stake amount (leave empty for free game)
 
-### 4. Join the Table (Players 2-4)
+### 4. Create a Table (Player 1)
 
-- In Tabs 2, 3, 4: Enter the Table ID and click **"SIT DOWN"**
-- Sign the MetaMask transaction in each
-- Wait for confirmation before the next player joins
-- You'll see seats fill up (animal masks: Fox, Rabbit, Cat, Owl)
+- Click **"New Table"**
+- Sign MetaMask transaction (approve USDC if staked)
+- Redirected to game room with your Table ID
 
-### 5. Start the Game (Player 1 only)
+### 5. Join the Table (Players 2-4)
 
-- Once 4/4 seated, Player 1 (host) sees **"DEAL THE CARDS"**
-- Click it and sign the transaction
-- This is a heavy transaction (deals 20 encrypted cards + inits 4 revolvers)
-- Wait ~15-30 seconds for confirmation
+- Enter the Table ID, click **"Sit Down"**
+- Sign MetaMask transaction
+- Each player sees their chosen character in their seat
 
-### 6. View Your Cards
+### 6. Start the Game (Player 1 only)
 
-- After the game starts, each player sees their 5 encrypted cards
-- Cards will show 🔒 initially, then decrypt after ~10-15 seconds
-- If cards don't appear, click **"🔓 Decrypt Hand"**
-- Each player sees different cards (Ace, King, Queen, or Joker)
+- Once 4/4 seated, host sees **"Deal the Cards"**
+- Click and sign — this is a heavy FHE transaction (~30s)
+- Deals encrypted cards + initializes 4 revolvers
 
-> **Note:** Card decryption requires the Fhenix CoFHE threshold network. If you get 403 errors, the testnet may be temporarily down.
+### 7. View Your Cards
 
-### 7. Play Cards (Current Turn Player)
+- Cards auto-decrypt after ~10-15 seconds
+- Each player sees different cards (face images: Ace, King, Queen, Joker)
+- If cards stay face-down, wait for retry (auto-retries after 18s)
 
-- The player whose turn it is (gold highlight) can:
-  - **Select 1-3 cards** by clicking them (they lift up with gold glow)
-  - Click **"PLAY [N] AS [TARGET]"** to play them face-down
-- The claim is always the target card (shown in the center)
-- You CAN lie — play Queens when the target is Kings!
+### 8. Play Cards
 
-### 8. Call Liar (Next Player)
+- Select 1-3 cards by clicking (they lift up when selected)
+- Click **"Play [N] as [Target]"** to play face-down
+- In Chaos mode: exactly 1 card per turn
 
-- After someone plays cards, the next player sees the **"LIAR!"** button
-- They can either:
-  - Play their own cards (believe the previous player)
-  - Click **"LIAR!"** to challenge
+### 9. Call LIAR
 
-### 9. Challenge Resolution
+- Next player can click **"LIAR!"** to challenge
+- Or play their own cards to continue
 
-- When LIAR is called:
-  - Dramatic overlay appears: "LIAR!" with accuser vs accused
-  - Cards are verified via FHE (takes 5-15 seconds)
-  - The challenger's client auto-submits the decrypt result
-  - Verdict shown: "CAUGHT LYING!" or "ALL VALID ✓"
+### 10. Challenge Resolution
 
-### 10. Pull the Trigger
+- Overlay shows accuser vs accused with their chosen characters
+- Cards are revealed with actual card images (green border = valid, red = lie)
+- Verdict: "CAUGHT LYING!" or "ALL VALID"
 
-- The loser sees a **"🔫 PULL TRIGGER"** button
-- Click it to resolve the spin
-- Sign the MetaMask transaction
-- Result: either *click* (survived) or BANG! (eliminated)
-- Full-screen dramatic animation plays
+### 11. Revolver
 
-### 11. New Round
+- **Basic/Devil**: Loser clicks "Pull Trigger" on their own revolver
+- **Chaos**: Winner picks an opponent to shoot (target picker)
+- Result: CLICK (survived) or BANG! (eliminated)
 
-- After a spin resolves (survived), a new round starts automatically
-- New target card is selected
-- New cards are dealt to all alive players
-- Turn passes to the next alive player
+### 12. Devil Mode Special
 
-### 12. Game Over
+- If Devil card is revealed during challenge, ALL other players must spin
+- Each affected player triggers their own spin
 
-- When only 1 player remains alive, the game ends
-- Winner screen shows with crown
-- All eliminated players shown with their masks cracked
+### 13. Chaos Mode Special
+
+- Master card: accused gets to shoot someone
+- Chaos card: ALL players simultaneously pick targets and shoot
+
+### 14. Game Over
+
+- Winner shown with crown, character, and wallet address
+- Eliminated players shown below
+- If staked: winner auto-receives USDC (95% of pot)
+- Click "Another Round" to return to lobby
 
 ---
 
 ## What to Test
 
-### Core Mechanics ✓
-- [ ] 4 players can join and start a game
-- [ ] Cards are encrypted (each player sees different cards)
+### Core Mechanics
+- [ ] 4 players join, choose characters, start game
+- [ ] Cards are encrypted and auto-decrypt per player
 - [ ] Playing cards removes them from hand
-- [ ] Calling LIAR triggers FHE verification
-- [ ] Correct player gets the revolver (liar or false accuser)
-- [ ] Revolver is per-player (each has own chamber count)
+- [ ] LIAR challenge triggers FHE verification
+- [ ] Card reveal shows actual card images
+- [ ] Correct player faces revolver
+- [ ] Per-player revolver chambers track correctly
 - [ ] Game ends when 1 player remains
 
-### FHE Verification ✓
-- [ ] Playing target cards + getting challenged → "ALL VALID" (accuser spins)
-- [ ] Playing wrong cards + getting challenged → "CAUGHT LYING" (liar spins)
-- [ ] Joker always counts as valid (wildcard)
+### Game Modes
+- [ ] Basic: 5 cards, 1-3 per turn, Joker is wild
+- [ ] Devil: Devil card triggers multi-spin on all others
+- [ ] Chaos: 3 cards, 1 per turn, winner shoots opponent
 
-### Edge Cases ✓
-- [ ] Timer expires (30s) → auto-plays a card
-- [ ] Player with no cards left → must call LIAR
-- [ ] Rejecting MetaMask tx → can retry via button
-- [ ] Dead players don't get cards or turns
+### Stake System
+- [ ] Create table with USDC stake (e.g. 1 USDC)
+- [ ] Joining requires USDC approval + transfer
+- [ ] Winner receives pot minus 5% fee on GameOver
+- [ ] Free games (stake=0) work without USDC
 
-### UI/UX ✓
-- [ ] Challenge overlay shows dramatic "LIAR!" animation
-- [ ] Spin overlay shows CLICK or BANG with effects
-- [ ] Turn timer counts down visually
-- [ ] Game log shows events
-- [ ] Per-player revolver chambers update correctly
+### Character System
+- [ ] 8 characters available in carousel
+- [ ] Choice stored on-chain (all players see correct characters)
+- [ ] Characters show in game, overlays, and winner screen
 
----
-
-## Known Limitations
-
-1. **Card decryption delay** — FHE threshold network takes 5-20 seconds. Cards show 🔒 until decrypted.
-2. **Fhenix testnet availability** — The CoFHE threshold network (`testnet-cofhe-tn.fhenix.zone`) may occasionally return 403. Retry after a few minutes.
-3. **Gas estimation** — Arb Sepolia base fee fluctuates. We use 5x multiplier but occasionally a tx may fail. Retry.
-4. **Heavy start transaction** — `startGame` deals 20 FHE cards + inits 4 revolvers. Can take 30+ seconds.
-5. **No real-time sync** — Uses 3-second polling. Other players' actions appear with slight delay.
+### UI/UX
+- [ ] Mode selector (Basic/Devil/Chaos) in lobby
+- [ ] Rules popup (? button) in lobby and game
+- [ ] Stake/pot shown in game nav bar
+- [ ] 60-second timer with visual countdown
+- [ ] Challenge overlay with character images
+- [ ] Winner modal with wallet address
 
 ---
 
@@ -145,23 +136,24 @@ Each tab should use a different MetaMask account.
 
 | Issue | Solution |
 |-------|----------|
-| Cards show 🔒 forever | Click "Decrypt Hand" button. If 403 error, Fhenix testnet may be down. |
-| "max fee per gas less than block base fee" | Retry — gas price fluctuated. Our 5x multiplier usually handles this. |
-| Game stuck in "Challenging" | The challenger's client auto-resolves. If they're offline, wait for timeout (30s) then any player can force. |
-| Game stuck in "Spinning" | The spinner must click "Pull Trigger". If offline, wait for timeout. |
-| Transaction fails silently | Check browser console for detailed error. Usually gas-related. |
-| Can't see other players' actions | Wait 3 seconds for polling to update. |
+| Cards stay face-down | Auto-retries after 18s. If persistent, Fhenix testnet may be temporarily down. |
+| "max fee per gas less than block base fee" | Retry — Arb Sepolia fee fluctuated. |
+| "USDC transfer failed" | Ensure you have USDC and approved the game contract. |
+| Game stuck in Challenging | Challenger's client auto-resolves. Wait for timeout (60s). |
+| Wrong character shown | Characters are on-chain — ensure you selected before joining. |
+| High gas alert | Normal for Arb Sepolia. Actual cost is minimal (~$0.001). |
 
 ---
 
-## Contract Verification
-
-All contracts are deployed on Arbitrum Sepolia and can be verified:
+## Contract Addresses (Arbitrum Sepolia)
 
 ```
-Game:     0x96Da3b705E3Bd95c70927732e6656FA337E1FEfe
-Deck:     0x10D0cD836F82a5a9B659E73a611FA272cAD41098
-Revolver: 0x3011DFd4076a2E6556591Acd57d7f9894cAe3bBd
+Revolver:       0x841e7d5d94aEb35Ce79AA1E310DbA1c859e4df0B
+Basic Game:     0xa8F9c55d817e6e04E31D80A7D064697d5ADE5A2D
+Basic Deck:     0x6778664E42A95c1E52f25949228B74a195063292
+Devil Game:     0xC5EA6c3F59f0e93D847C9b41501368Cec2CE37A2
+Devil Deck:     0x6E26Bffa8156863e5cBFAE05B8FB32f1D2A797F9
+Chaos Game:     0x23DC7899C287AF749eBA0Bc0Dcbe53CDA1A2f1Fd
+Chaos Deck:     0x2FaB9916571955f61596A2bBe80fe611F2549f4A
+USDC:           0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d
 ```
-
-View on [Arbiscan Sepolia](https://sepolia.arbiscan.io/address/0x96Da3b705E3Bd95c70927732e6656FA337E1FEfe)
