@@ -198,6 +198,11 @@ SPIN RESULT:     allowPublic                  → everyone sees fired/safe
 5. **No front-running** — encrypted values in mempool reveal nothing
 6. **Timeout protection** — 60s per turn, forceTimeout() prevents griefing
 7. **Fair stakes** — USDC held in contract escrow, auto-distributed
+8. **Checked transfers** — all USDC transfer() calls use require() (audit fix C-1)
+9. **Participant-only resolution** — publishChallengeResult restricted to game players (audit fix C-2)
+10. **Revolver access control** — publishSpinResult/publishDoubleSpinResult require onlyGame (audit fix C-4)
+11. **No info leak on elimination** — dead players' cards dealt to address(0) (audit fix H-2)
+12. **Correct multi-spin** — Devil mode uses per-spinner ctHash mapping (audit fix C-3)
 
 ---
 

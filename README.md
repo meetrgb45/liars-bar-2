@@ -97,16 +97,16 @@ npx hardhat run scripts/deploy-all.ts --network arb-sepolia
 
 | Contract | Address |
 |----------|---------|
-| LiarsBarRevolver (shared) | `0x841e7d5d94aEb35Ce79AA1E310DbA1c859e4df0B` |
+| LiarsBarRevolver (shared) | `0x13e6C9CE2845545cbb741bFC2d3E14B84A628790` |
 | **Basic Mode** | |
-| LiarsBarGame | `0xa8F9c55d817e6e04E31D80A7D064697d5ADE5A2D` |
-| LiarsBarDeck | `0x6778664E42A95c1E52f25949228B74a195063292` |
+| LiarsBarGame | `0xF0EF07D0a1A1A4C78eD35562B5eb7B7b311E62A0` |
+| LiarsBarDeck | `0xD407D06b2868E8d0ED28E57842DB3877b3FA7dF8` |
 | **Devil Mode** | |
-| LiarsBarDevilGame | `0xC5EA6c3F59f0e93D847C9b41501368Cec2CE37A2` |
-| LiarsBarDevilDeck | `0x6E26Bffa8156863e5cBFAE05B8FB32f1D2A797F9` |
+| LiarsBarDevilGame | `0x0821057DCD8bbABbbebe64c54a4C59d4fB7DEE0C` |
+| LiarsBarDevilDeck | `0xBb0ED4ce97a4bb5D92ecFA8Ba9d1a3B5aA706565` |
 | **Chaos Mode** | |
-| LiarsBarChaosGame | `0x23DC7899C287AF749eBA0Bc0Dcbe53CDA1A2f1Fd` |
-| LiarsBarChaosDeck | `0x2FaB9916571955f61596A2bBe80fe611F2549f4A` |
+| LiarsBarChaosGame | `0xe8F9019455f7359E874648f7128429EaE8cB929C` |
+| LiarsBarChaosDeck | `0xfba0b763b71Dd67aF9b4cfE4acb2Dd11511A7c30` |
 | **USDC** | `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d` |
 
 ---
@@ -190,10 +190,13 @@ npx hardhat run scripts/deploy-all.ts --network arb-sepolia
 - Card reveal on challenge (actual card images shown)
 - Per-player revolver with chamber indicators
 - 60-second turn timer with on-chain forceTimeout()
-- Dramatic overlays (LIAR!, CLICK, BANG, Winner)
+- Dramatic overlays (LIAR!, CLICK, BANG, Winner with wallet address)
 - Mode selector (Basic/Devil/Chaos) in lobby
-- USDC stake with automatic payout
+- USDC stake with automatic payout (5% platform fee)
 - Rules info button in lobby and game
+- WebSocket relay for real-time sync (3s polling fallback)
+- Multi-wallet support (MetaMask, Phantom, Rabby, Coinbase, etc.)
+- Security audited — checked transfer returns, access controls, participant validation
 
 ---
 
@@ -201,7 +204,9 @@ npx hardhat run scripts/deploy-all.ts --network arb-sepolia
 
 - [CONTRACTS.md](./CONTRACTS.md) — FHE and contract implementation details
 - [TESTING_GUIDE.md](./TESTING_GUIDE.md) — Step-by-step testing guide
+- [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) — Deploy to Vercel + Render
 - [devil-chaos-plan.md](./devil-chaos-plan.md) — Devil and Chaos mode design
+- [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md) — Full technical documentation
 
 ---
 

@@ -119,7 +119,6 @@ export default function GameRoom() {
   // Drive challenge overlay phases based on state transitions
   useEffect(() => {
     if (prevStateRef.current === 'PlayerTurn' && state === 'Challenging') {
-      // Just entered Challenging — show accusation
       const accuserIdx = currentTurnIndex;
       const accusedIdx = players.findIndex(p => p.addr?.toLowerCase() === lastClaimant?.toLowerCase());
       setChallengeAccuser(accuserIdx);
@@ -128,11 +127,20 @@ export default function GameRoom() {
       setTimeout(() => setChallengePhase('revealing'), 2000);
     }
     if (prevStateRef.current === 'Challenging' && state === 'Spinning') {
-      // Challenge resolved — show verdict
-      const pendingSpinner = useGameStore.getState().pendingSpinner;
-      const spinnerIsAccused = pendingSpinner?.toLowerCase() === players[challengeAccused]?.addr?.toLowerCase();
-      setChallengePhase(spinnerIsAccused ? 'verdict-lie' : 'verdict-valid');
-      setTimeout(() => setChallengePhase(null), 4000);
+      // Wait for revealedCards before showing verdict
+      const waitForReveal = () => {
+        const cards = useGameStore.getState().revealedCards;
+        if (cards.length > 0) {
+          const pendingSpinner = useGameStore.getState().pendingSpinner;
+          const spinnerIsAccused = pendingSpinner?.toLowerCase() === players[challengeAccused]?.addr?.toLowerCase();
+          setChallengePhase(spinnerIsAccused ? 'verdict-lie' : 'verdict-valid');
+          setTimeout(() => setChallengePhase(null), 4000);
+        } else {
+          // Cards not revealed yet, check again in 1s
+          setTimeout(waitForReveal, 1000);
+        }
+      };
+      waitForReveal();
     }
     prevStateRef.current = state;
   }, [state, currentTurnIndex, lastClaimant, players, challengeAccused]);

@@ -281,18 +281,18 @@ contract LiarsBarChaosGame {
 
         // Check if more shots pending (multi-targeting)
         if (g.multiShooters.length > 1) {
-            // Track which shot we're on using targetsChosen as decrementing counter
-            // First shot was index 0 (already fired before this function)
-            // Subsequent shots: index 1, 2, ...
-            uint8 shotsCompleted = uint8(g.multiShooters.length) - uint8(g.targetsChosen) + 1;
             g.targetsChosen--;
-            if (g.targetsChosen > 0 && g.aliveCount > 1) {
+            // Process remaining shots
+            while (g.targetsChosen > 0 && g.aliveCount > 1) {
+                uint8 shotsCompleted = uint8(g.multiShooters.length) - uint8(g.targetsChosen);
                 address nextTarget = g.chosenTargets[g.multiShooters[shotsCompleted]];
                 if (nextTarget != address(0) && _isAlivePlayer(gameId, nextTarget)) {
                     uint256 spinCt = revolver.spinForTarget(gameId, nextTarget);
                     g.pendingCtHash = spinCt;
                     return;
                 }
+                // Target already dead, skip to next
+                g.targetsChosen--;
             }
         }
 
@@ -325,6 +325,19 @@ contract LiarsBarChaosGame {
             g.chosenTargets[g.shooter] = target;
             g.state = GameState.Shooting;
             uint256 spinCt = revolver.spinForTarget(gameId, target);
+            g.pendingCtHash = spinCt;
+        } else if (g.state == GameState.MultiTargeting) {
+            // Auto-assign targets for players who haven't chosen
+            for (uint256 i = 0; i < g.multiShooters.length; i++) {
+                if (g.chosenTargets[g.multiShooters[i]] == address(0)) {
+                    g.chosenTargets[g.multiShooters[i]] = _firstAliveOpponent(gameId, g.multiShooters[i]);
+                    g.targetsChosen++;
+                }
+            }
+            // Execute first shot
+            g.state = GameState.Shooting;
+            address firstTarget = g.chosenTargets[g.multiShooters[0]];
+            uint256 spinCt = revolver.spinForTarget(gameId, firstTarget);
             g.pendingCtHash = spinCt;
         }
     }

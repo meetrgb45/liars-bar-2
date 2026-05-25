@@ -174,22 +174,16 @@ contract LiarsBarDevilGame {
         address accuser = g.players[g.currentTurnIndex].addr;
         address accused = g.lastClaimant;
 
+        // Store result but DON'T spin yet — wait for publishCardReveal to check for Devil
         if (allValid) {
-            // Cards were valid — accuser spins (single)
             g.pendingSpinner = accuser;
-            g.state = GameState.Spinning;
-            g.turnDeadline = block.timestamp + TURN_TIMEOUT;
-            _triggerSpin(gameId);
             emit ChallengeResolved(gameId, false, accuser);
         } else {
-            // Lie confirmed — accused spins (single)
             g.pendingSpinner = accused;
-            g.state = GameState.Spinning;
-            g.turnDeadline = block.timestamp + TURN_TIMEOUT;
-            _triggerSpin(gameId);
             emit ChallengeResolved(gameId, true, accused);
         }
         g.pendingCtHash = 0;
+        // Stay in Challenging state — publishCardReveal will transition to Spinning or MultiSpinning
     }
 
     /**
@@ -198,6 +192,7 @@ contract LiarsBarDevilGame {
      */
     function publishCardReveal(uint256 gameId, uint256[] calldata ctHashes, uint256[] calldata results, bytes[] calldata signatures) external {
         Game storage g = games[gameId];
+        require(g.state == GameState.Challenging, "Not challenging");
         require(ctHashes.length == results.length && results.length == signatures.length, "Length mismatch");
 
         uint8[] memory cards = new uint8[](results.length);
@@ -212,10 +207,9 @@ contract LiarsBarDevilGame {
         revealedCards[gameId] = cards;
         emit CardsRevealed(gameId, cards, wasLie);
 
-        // If devil was revealed and cards were valid (not a lie), trigger multi-spin
-        // Devil retribution: all OTHER players spin (not the one who played devil)
-        if (hasDevil && !wasLie && g.state == GameState.Spinning) {
-            // Override single spin → multi spin
+        // Determine outcome based on Devil presence
+        if (hasDevil && !wasLie) {
+            // Devil retribution: all OTHER players spin (not the devil player)
             g.state = GameState.MultiSpinning;
             delete g.pendingSpinners;
             g.spinsResolved = 0;
@@ -226,8 +220,13 @@ contract LiarsBarDevilGame {
                     g.pendingSpinners.push(g.players[i].addr);
                 }
             }
+            g.turnDeadline = block.timestamp + TURN_TIMEOUT;
             emit DevilRevealed(gameId, devilPlayer);
-            // Each pending spinner must call spinRevolver individually
+        } else {
+            // Normal outcome: single spinner (set by publishChallengeResult)
+            g.state = GameState.Spinning;
+            g.turnDeadline = block.timestamp + TURN_TIMEOUT;
+            _triggerSpin(gameId);
         }
     }
 
@@ -298,6 +297,15 @@ contract LiarsBarDevilGame {
             _triggerSpin(gameId);
         } else if (g.state == GameState.Spinning) {
             _eliminatePlayer(gameId, g.pendingSpinner);
+        } else if (g.state == GameState.MultiSpinning) {
+            // Eliminate all players who haven't triggered their spin
+            for (uint256 i = 0; i < g.pendingSpinners.length; i++) {
+                if (multiSpinCtHashes[gameId][g.pendingSpinners[i]] == 0 && g.aliveCount > 1) {
+                    _eliminatePlayerNoRound(gameId, g.pendingSpinners[i]);
+                }
+            }
+            if (g.aliveCount <= 1) { _checkWinner(gameId); }
+            else { _startRound(gameId); }
         }
     }
 
