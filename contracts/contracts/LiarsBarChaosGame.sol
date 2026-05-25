@@ -280,13 +280,15 @@ contract LiarsBarChaosGame {
         }
 
         // Check if more shots pending (multi-targeting)
-        if (g.multiShooters.length > 0) {
-            g.targetsChosen--; // reuse as "shots remaining" counter
+        if (g.multiShooters.length > 1) {
+            // Track which shot we're on using targetsChosen as decrementing counter
+            // First shot was index 0 (already fired before this function)
+            // Subsequent shots: index 1, 2, ...
+            uint8 shotsCompleted = uint8(g.multiShooters.length) - uint8(g.targetsChosen) + 1;
+            g.targetsChosen--;
             if (g.targetsChosen > 0 && g.aliveCount > 1) {
-                // Find next shooter's target
-                uint8 nextIdx = uint8(g.multiShooters.length - g.targetsChosen);
-                address nextTarget = g.chosenTargets[g.multiShooters[nextIdx]];
-                if (_isAlivePlayer(gameId, nextTarget)) {
+                address nextTarget = g.chosenTargets[g.multiShooters[shotsCompleted]];
+                if (nextTarget != address(0) && _isAlivePlayer(gameId, nextTarget)) {
                     uint256 spinCt = revolver.spinForTarget(gameId, nextTarget);
                     g.pendingCtHash = spinCt;
                     return;
@@ -346,6 +348,7 @@ contract LiarsBarChaosGame {
 
     function getPendingCtHash(uint256 gameId) external view returns (uint256) { return games[gameId].pendingCtHash; }
     function getTurnDeadline(uint256 gameId) external view returns (uint256) { return games[gameId].turnDeadline; }
+    function getStakeAmount(uint256 gameId) external view returns (uint256) { return games[gameId].stakeAmount; }
     function getShooter(uint256 gameId) external view returns (address) { return games[gameId].shooter; }
     function getMultiShooters(uint256 gameId) external view returns (address[] memory) { return games[gameId].multiShooters; }
     function getRevealCtHash(uint256 gameId) external view returns (uint256) { return revealCtHash[gameId]; }
@@ -360,7 +363,7 @@ contract LiarsBarChaosGame {
         g.targetCard = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, gameId, g.round))) % 2);
 
         address[4] memory dealTo;
-        for (uint8 i = 0; i < 4; i++) dealTo[i] = g.players[i].alive ? g.players[i].addr : g.players[0].addr;
+        for (uint8 i = 0; i < 4; i++) dealTo[i] = g.players[i].alive ? g.players[i].addr : address(0);
         deck.dealAllHands(gameId * 100 + g.round, dealTo);
 
         g.lastClaimant = address(0);
@@ -393,8 +396,8 @@ contract LiarsBarChaosGame {
                 if (g.stakeAmount > 0) {
                     uint256 pot = g.stakeAmount * 4;
                     uint256 fee = (pot * FEE_BPS) / 10000;
-                    usdc.transfer(treasury, fee);
-                    usdc.transfer(g.winner, pot - fee);
+                    require(usdc.transfer(treasury, fee), "Fee transfer failed");
+                    require(usdc.transfer(g.winner, pot - fee), "Winner transfer failed");
                 }
                 emit GameOver(gameId, g.winner);
                 return;

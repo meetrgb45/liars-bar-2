@@ -48,6 +48,8 @@ contract LiarsBarDevilGame {
     // Card reveal
     mapping(uint256 => uint256[]) public revealCtHashes;
     mapping(uint256 => uint8[]) public revealedCards;
+    // Per-spinner ctHash for multi-spin
+    mapping(uint256 => mapping(address => uint256)) public multiSpinCtHashes;
 
     event CardsRevealed(uint256 indexed gameId, uint8[] cardValues, bool wasLie);
     event GameCreated(uint256 indexed gameId, address indexed host);
@@ -240,9 +242,10 @@ contract LiarsBarDevilGame {
             if (g.pendingSpinners[i] == msg.sender) { found = true; break; }
         }
         require(found, "Not a pending spinner");
+        require(multiSpinCtHashes[gameId][msg.sender] == 0, "Already triggered");
 
         uint256 ctHash = revolver.beginSpin(gameId, msg.sender);
-        g.pendingCtHash = ctHash; // overwritten per spinner, frontend tracks per-player
+        multiSpinCtHashes[gameId][msg.sender] = ctHash;
         emit SpinTriggered(gameId, msg.sender, true);
     }
 
@@ -319,6 +322,7 @@ contract LiarsBarDevilGame {
     function getPendingSpinner(uint256 gameId) external view returns (address) { return games[gameId].pendingSpinner; }
     function getPendingCtHash(uint256 gameId) external view returns (uint256) { return games[gameId].pendingCtHash; }
     function getTurnDeadline(uint256 gameId) external view returns (uint256) { return games[gameId].turnDeadline; }
+    function getStakeAmount(uint256 gameId) external view returns (uint256) { return games[gameId].stakeAmount; }
     function getRevealCtHashes(uint256 gameId) external view returns (uint256[] memory) { return revealCtHashes[gameId]; }
     function getRevealedCards(uint256 gameId) external view returns (uint8[] memory) { return revealedCards[gameId]; }
 
@@ -334,7 +338,7 @@ contract LiarsBarDevilGame {
         g.targetCard = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, gameId, g.round))) % 3);
 
         address[4] memory dealTo;
-        for (uint8 i = 0; i < 4; i++) dealTo[i] = g.players[i].alive ? g.players[i].addr : g.players[0].addr;
+        for (uint8 i = 0; i < 4; i++) dealTo[i] = g.players[i].alive ? g.players[i].addr : address(0);
         deck.dealAllHands(gameId * 100 + g.round, dealTo, g.targetCard);
 
         g.lastClaimant = address(0);
@@ -381,8 +385,8 @@ contract LiarsBarDevilGame {
                 if (g.stakeAmount > 0) {
                     uint256 pot = g.stakeAmount * 4;
                     uint256 fee = (pot * FEE_BPS) / 10000;
-                    usdc.transfer(treasury, fee);
-                    usdc.transfer(g.winner, pot - fee);
+                    require(usdc.transfer(treasury, fee), "Fee transfer failed");
+                    require(usdc.transfer(g.winner, pot - fee), "Winner transfer failed");
                 }
                 emit GameOver(gameId, g.winner);
                 return;
@@ -420,15 +424,12 @@ contract LiarsBarDevilGame {
     }
 
     function _findSpinnerByCt(uint256 gameId, uint256 ctHash) internal view returns (address) {
-        // In multi-spin, each player's spin has a unique ctHash from revolver
-        // We trust the caller passes the correct one; revolver.publishSpinResult validates
         Game storage g = games[gameId];
         for (uint256 i = 0; i < g.pendingSpinners.length; i++) {
-            // Can't easily verify here without storing per-spinner ctHash
-            // The revolver contract validates internally
+            if (multiSpinCtHashes[gameId][g.pendingSpinners[i]] == ctHash) {
+                return g.pendingSpinners[i];
+            }
         }
-        // For now, trust that the frontend passes correct spinner info
-        // A more robust approach would store per-spinner ctHashes
-        return g.pendingSpinners[g.spinsResolved];
+        revert("Spinner not found for ctHash");
     }
 }

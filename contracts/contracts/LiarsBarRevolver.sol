@@ -140,7 +140,7 @@ contract LiarsBarRevolver is ILiarsBarGame {
         uint256 ctHash,
         uint256 result,
         bytes calldata signature
-    ) external {
+    ) external onlyGame {
         // Accept if matches global OR per-player ctHash
         require(
             ctHash == pendingSpinCtHash[gameId] || ctHash == pendingPlayerCtHash[gameId][player],
@@ -160,7 +160,7 @@ contract LiarsBarRevolver is ILiarsBarGame {
         uint256 ctHash,
         uint256 result,
         bytes calldata signature
-    ) external {
+    ) external onlyGame {
         require(ctHash == pendingDoubleCt[gameId], "Wrong ctHash");
         require(isDoubleSpin[gameId], "Not a double spin");
         FHE.publishDecryptResult(ctHash, result, signature);

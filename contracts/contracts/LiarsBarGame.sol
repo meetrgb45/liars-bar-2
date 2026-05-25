@@ -209,6 +209,7 @@ contract LiarsBarGame is ILiarsBarGame {
         Game storage g = games[gameId];
         if (g.state != GameState.Challenging) revert NotInCorrectPhase();
         if (ctHash != g.pendingCtHash) revert InvalidCtHash();
+        require(_isParticipant(gameId, msg.sender), "Not a participant");
 
         FHE.publishDecryptResult(ctHash, result, signature);
 
@@ -499,7 +500,7 @@ contract LiarsBarGame is ILiarsBarGame {
         // For the full game: deal to all 4 slots, dead players' cards are just wasted
         address[4] memory dealTo;
         for (uint8 i = 0; i < 4; i++) {
-            dealTo[i] = g.players[i].alive ? g.players[i].addr : g.players[0].addr;
+            dealTo[i] = g.players[i].alive ? g.players[i].addr : address(0);
         }
         deck.dealAllHands(gameId * 100 + g.round, dealTo);
 
@@ -549,8 +550,8 @@ contract LiarsBarGame is ILiarsBarGame {
                     if (g.stakeAmount > 0) {
                         uint256 pot = g.stakeAmount * 4;
                         uint256 fee = (pot * FEE_BPS) / 10000;
-                        usdc.transfer(treasury, fee);
-                        usdc.transfer(g.winner, pot - fee);
+                        require(usdc.transfer(treasury, fee), "Fee transfer failed");
+                        require(usdc.transfer(g.winner, pot - fee), "Winner transfer failed");
                     }
                     emit GameOver(gameId, g.winner);
                     return;
@@ -601,5 +602,12 @@ contract LiarsBarGame is ILiarsBarGame {
             if (g.players[i].addr == address(0)) return i;
         }
         return 4;
+    }
+
+    function _isParticipant(uint256 gameId, address addr) internal view returns (bool) {
+        for (uint8 i = 0; i < 4; i++) {
+            if (games[gameId].players[i].addr == addr) return true;
+        }
+        return false;
     }
 }
