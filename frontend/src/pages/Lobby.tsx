@@ -9,7 +9,6 @@ import {
 } from '../lib/contracts';
 import { CHARACTERS } from '../lib/characters';
 import { useGameStore } from '../stores/gameStore';
-import { shortenAddress } from '../lib/cardUtils';
 import { getGasOverrides } from '../lib/gas';
 
 type Mode = 'basic' | 'devil' | 'chaos';
@@ -42,7 +41,7 @@ const MODE_CONFIG: Record<Mode, { address: `0x${string}`; abi: any; label: strin
 
 export default function Lobby() {
   const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
+  const { connectors, connect } = useConnect();
   const { disconnect } = useDisconnect();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
@@ -62,7 +61,9 @@ export default function Lobby() {
     setLoading('Creating...'); setError('');
     try {
       const gas = await getGasOverrides(publicClient!);
-      const stakeAmount = stakeInput ? BigInt(Math.floor(parseFloat(stakeInput) * 1e6)) : 0n;
+      const parsed = stakeInput ? parseFloat(stakeInput) : 0;
+      if (isNaN(parsed) || parsed < 0) { setError('Invalid stake amount'); setLoading(''); return; }
+      const stakeAmount = BigInt(Math.floor(parsed * 1e6));
       if (stakeAmount > 0n) {
         setLoading('Approving USDC...');
         const approveHash = await writeContractAsync({ address: USDC_ADDRESS, abi: USDC_ABI, functionName: 'approve', args: [modeContract.address, stakeAmount], ...gas });
@@ -71,11 +72,9 @@ export default function Lobby() {
       }
       const hash = await writeContractAsync({ address: modeContract.address, abi: modeContract.abi, functionName: 'createGame', args: [myCharacter, stakeAmount], ...gas });
       const receipt = await publicClient!.waitForTransactionReceipt({ hash });
-      // Find GameCreated event (topic0 = keccak256("GameCreated(uint256,address)"))
-      const gameCreatedTopic = '0x1b4e6c3e3b2e2e3e'; // fallback: just use first log with 2+ topics from game contract
-      const gameLogs = receipt.logs.filter(l => l.address.toLowerCase() === modeContract.address.toLowerCase());
-      const log = gameLogs[0];
-      const gameId = log?.topics[1] ? Number(BigInt(log.topics[1])) : 0;
+      // Parse gameId from GameCreated event (first indexed param)
+      const gameLogs = receipt.logs.filter(l => l.address.toLowerCase() === modeContract.address.toLowerCase() && l.topics.length >= 2);
+      const gameId = gameLogs.length > 0 ? Number(BigInt(gameLogs[0].topics[1]!)) : 0;
       navigate(`/game/${mode}/${gameId}`);
     } catch (e: any) { setError(e.shortMessage || e.message); }
     setLoading('');
@@ -107,11 +106,14 @@ export default function Lobby() {
       <div className="cards-bg">
         {Array.from({ length: 16 }, (_, i) => {
           const cards = ['ace1','king1','queen1','joker1','back1'];
+          const left = ((i * 37 + 13) % 90) + 3;
+          const top = ((i * 53 + 7) % 90) + 3;
+          const rot = ((i * 29) % 90) - 45;
           return (
             <div key={i} className="floating-card" style={{
               backgroundImage: `url(/playing_card/${cards[i % cards.length]}.png)`,
-              left: `${Math.random() * 94 + 3}%`, top: `${Math.random() * 94 + 3}%`,
-              ['--rot' as any]: `${Math.floor(Math.random() * 90 - 45)}deg`,
+              left: `${left}%`, top: `${top}%`,
+              ['--rot' as any]: `${rot}deg`,
               animationDelay: `${i * 0.04}s`,
             }} />
           );
@@ -144,13 +146,19 @@ export default function Lobby() {
           </div>
 
           {!isConnected ? (
-            <button className="btn green" style={{ width: '100%', fontSize: '1.2rem', padding: '0.8rem' }} onClick={() => connect({ connector: connectors[0] })}>
-              Connect Wallet
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
+              {connectors.map((connector) => (
+                <button key={connector.uid} className="btn" style={{ width: '100%', padding: '0.6rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                  onClick={() => connect({ connector })}>
+                  {connector.icon && <img src={connector.icon} alt="" style={{ width: 20, height: 20, borderRadius: '0.2rem' }} />}
+                  {connector.name}
+                </button>
+              ))}
+            </div>
           ) : (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', paddingBottom: '0.6rem', borderBottom: '1px solid rgba(90,70,50,0.3)' }}>
-                <span style={{ fontSize: '0.7rem', color: '#5a4a3a', fontFamily: 'monospace' }}>{shortenAddress(address!)}</span>
+                <span style={{ fontSize: '0.7rem', color: '#5a4a3a', fontFamily: 'monospace' }}>{address?.slice(0, 6)}...{address?.slice(-4)}</span>
                 <button onClick={() => disconnect()} style={{ fontSize: '0.6rem', color: '#8b7b5a', cursor: 'pointer', textDecoration: 'underline', background: 'none' }}>Disconnect</button>
               </div>
 

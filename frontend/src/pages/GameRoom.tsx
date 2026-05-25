@@ -8,6 +8,7 @@ import { useCofhe } from '../hooks/useCofhe';
 import { useChallenge } from '../hooks/useChallenge';
 import { useSpin } from '../hooks/useSpin';
 import { useAutoAction } from '../hooks/useAutoAction';
+import { useWebSocket } from '../hooks/useWebSocket';
 import {
   GAME_ADDRESS, GAME_ABI,
   DEVIL_GAME_ADDRESS, DEVIL_GAME_ABI,
@@ -74,6 +75,7 @@ export default function GameRoom() {
   const { resolveSpin, spinning, outcome, clearOutcome, isMySpinTurn } = useSpin();
   useGameState();
   useAutoAction();
+  const { notifyStateChanged } = useWebSocket();
 
   useEffect(() => { if (id) { setGameId(Number(id)); setGameMode(mode); } }, [id, mode, setGameId, setGameMode]);
 
@@ -140,7 +142,7 @@ export default function GameRoom() {
   const isHost = players[0]?.addr?.toLowerCase() === address?.toLowerCase();
   const canStart = state === 'WaitingForPlayers' && isHost && playerCount === 4;
   const hasClaimToChallenge = lastClaimant && lastClaimant !== '0x0000000000000000000000000000000000000000' && lastClaimant.toLowerCase() !== address?.toLowerCase();
-  const hasCardsLeft = playedCards.length < 5;
+  const hasCardsLeft = playedCards.length < (mode === 'chaos' ? 3 : 5);
 
   const startGame = async () => {
     setError(''); setLoading(true);
@@ -148,24 +150,55 @@ export default function GameRoom() {
       const gas = await getGasOverrides(publicClient!);
       const hash = await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'startGame', args: [BigInt(id!)], ...gas });
       await publicClient!.waitForTransactionReceipt({ hash });
+      notifyStateChanged();
     } catch (e: any) { setError(e.shortMessage || e.message); }
     setLoading(false);
   };
 
   const playCards = async () => {
     if (selectedCards.length === 0) return;
-    const gas = await getGasOverrides(publicClient!);
-    if (mode === 'chaos') {
-      await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'playCard', args: [BigInt(id!), selectedCards[0]], ...gas });
-    } else {
-      await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'playCards', args: [BigInt(id!), selectedCards.map((i) => i)], ...gas });
+    setError('');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const gas = await getGasOverrides(publicClient!);
+        if (mode === 'chaos') {
+          await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'playCard', args: [BigInt(id!), selectedCards[0]], ...gas });
+        } else {
+          await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'playCards', args: [BigInt(id!), selectedCards.map((i) => i)], ...gas });
+        }
+        markCardsPlayed(selectedCards);
+        notifyStateChanged();
+        return;
+      } catch (e: any) {
+        const msg = e.shortMessage || e.message || '';
+        if (/user rejected|denied/i.test(msg)) { setError(''); return; }
+        if (attempt < 2 && /gas|fee|insufficient/i.test(msg)) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        setError(msg || 'Transaction failed');
+      }
     }
-    markCardsPlayed(selectedCards);
   };
 
   const callLiar = async () => {
-    const gas = await getGasOverrides(publicClient!);
-    await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'callLiar', args: [BigInt(id!)], ...gas });
+    setError('');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const gas = await getGasOverrides(publicClient!);
+        await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'callLiar', args: [BigInt(id!)], ...gas });
+        notifyStateChanged();
+        return;
+      } catch (e: any) {
+        const msg = e.shortMessage || e.message || '';
+        if (/user rejected|denied/i.test(msg)) { setError(''); return; }
+        if (attempt < 2 && /gas|fee|insufficient/i.test(msg)) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        setError(msg || 'Transaction failed');
+      }
+    }
   };
 
   // Get opponents (everyone except me)
@@ -356,6 +389,10 @@ export default function GameRoom() {
             </div>
           )}
           {state === 'PlayerTurn' && !isMyTurn && <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#8b7b5a' }}>Waiting for {CHAR_NAMES[currentTurnIndex]}...</p>}
+          {error && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.4rem' }}>
+            <p style={{ fontSize: '0.7rem', color: '#ffb4ab' }}>{error}</p>
+            <button onClick={() => { setError(''); }} style={{ fontSize: '0.6rem', color: '#c9a84c', background: 'none', cursor: 'pointer', textDecoration: 'underline' }}>dismiss</button>
+          </div>}
         </div>
       )}
 

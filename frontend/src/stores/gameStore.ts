@@ -84,6 +84,7 @@ export const useGameStore = create<GameStore>((set) => ({
   setMyHand: (hand) => set({ myHand: hand }),
   toggleCard: (index) => set((s) => {
     if (s.playedCards.includes(index)) return s;
+    if (s.state !== 'PlayerTurn') return s;
     const maxSelect = s.gameMode === 'chaos' ? 1 : 3;
     const sel = s.selectedCards.includes(index)
       ? s.selectedCards.filter((i) => i !== index)

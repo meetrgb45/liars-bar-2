@@ -102,8 +102,9 @@ export function useMyHand() {
       setMyHand(hand);
     } catch (e) {
       console.error('[useMyHand] error:', e);
+    } finally {
+      decryptingRef.current = false;
     }
-    decryptingRef.current = false;
   }, [address, publicClient, gameId, gameMode, round, cofheReady, setMyHand]);
 
   return { decryptHand };

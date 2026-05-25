@@ -105,7 +105,7 @@ export function useChallenge() {
       console.error('[challenge] resolution failed:', e);
     }
     setResolving(false);
-  }, [publicClient, gameId, cofheReady, writeContractAsync]);
+  }, [publicClient, gameId, gameMode, cofheReady, writeContractAsync]);
 
   return { resolveChallenge, resolving };
 }

@@ -19,8 +19,6 @@ export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, on
   const players = useGameStore((s) => s.players);
   const gameMode = useGameStore((s) => s.gameMode);
 
-  if (!phase) return null;
-
   // Get character from on-chain data
   const charFor = (idx: number) => {
     const p = players[idx];
@@ -44,7 +42,9 @@ export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, on
 
   return (
     <AnimatePresence>
+      {phase && (
       <motion.div
+        key={phase}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -148,6 +148,7 @@ export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, on
           </motion.div>
         )}
       </motion.div>
+      )}
     </AnimatePresence>
   );
 }

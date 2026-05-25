@@ -93,6 +93,8 @@ export function useGameState() {
     };
     poll();
     const interval = setInterval(poll, 3000);
-    return () => clearInterval(interval);
+    const onWsChange = () => poll();
+    window.addEventListener('ws-state-changed', onWsChange);
+    return () => { clearInterval(interval); window.removeEventListener('ws-state-changed', onWsChange); };
   }, [gameId, gameMode, publicClient, updateFromChain, setPlayers, setLastClaim, setChamberPointers, setPendingSpinner]);
 }

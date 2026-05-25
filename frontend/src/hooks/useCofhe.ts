@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
-import { initCofhe, getClient } from '../lib/cofhe';
+import { initCofhe, getClient, resetClient } from '../lib/cofhe';
 import { useGameStore } from '../stores/gameStore';
 
 export function useCofhe() {
@@ -9,6 +9,16 @@ export function useCofhe() {
   const { data: walletClient } = useWalletClient();
   const setCofheReady = useGameStore((s) => s.setCofheReady);
   const cofheReady = useGameStore((s) => s.cofheReady);
+  const lastAddrRef = useRef<string | null>(null);
+
+  // Reset on wallet switch
+  useEffect(() => {
+    if (address && lastAddrRef.current && lastAddrRef.current !== address) {
+      resetClient();
+      setCofheReady(false);
+    }
+    lastAddrRef.current = address ?? null;
+  }, [address, setCofheReady]);
 
   useEffect(() => {
     if (!publicClient || !walletClient || !address || cofheReady) return;
@@ -17,7 +27,6 @@ export function useCofhe() {
       try {
         const client = await initCofhe(publicClient, walletClient, address);
         if (client) {
-          // Remove any stale permits from previous sessions, then create fresh
           try {
             const chainId = await publicClient.getChainId();
             const permits = await client.permits.getPermits(chainId, address);
@@ -27,7 +36,6 @@ export function useCofhe() {
               }
             }
           } catch {}
-          // Create fresh self-permit
           await client.permits.getOrCreateSelfPermit();
           console.log('[useCofhe] fresh permit created');
           setCofheReady(true);

@@ -56,11 +56,14 @@ export function useAutoAction() {
       try {
         const gas = await getGasOverrides(publicClient);
         const { address: gameAddr, abi } = getContracts(gameMode);
-        const hasClaimToChallenge = lastClaimant && lastClaimant !== '0x0000000000000000000000000000000000000000' && lastClaimant.toLowerCase() !== address.toLowerCase();
+        // Read fresh state to avoid stale closure
+        const freshState = useGameStore.getState();
+        const freshPlayedCards = freshState.playedCards;
+        const freshLastClaimant = freshState.lastClaimant;
+        const hasClaimToChallenge = freshLastClaimant && freshLastClaimant !== '0x0000000000000000000000000000000000000000' && freshLastClaimant.toLowerCase() !== address.toLowerCase();
 
-        // Find first unplayed card
         const maxCards = gameMode === 'chaos' ? 3 : 5;
-        const unplayedIndex = Array.from({ length: maxCards }, (_, i) => i).find((i) => !playedCards.includes(i));
+        const unplayedIndex = Array.from({ length: maxCards }, (_, i) => i).find((i) => !freshPlayedCards.includes(i));
 
         if (unplayedIndex !== undefined) {
           console.log('[autoAction] timer expired, auto-playing card', unplayedIndex);
