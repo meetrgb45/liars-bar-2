@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWriteContract, usePublicClient } from 'wagmi';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   GAME_ADDRESS, GAME_ABI,
   DEVIL_GAME_ADDRESS, DEVIL_GAME_ABI,
@@ -46,10 +46,11 @@ export default function Lobby() {
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const myCharacter = useGameStore((s) => s.myCharacter);
   const setMyCharacter = useGameStore((s) => s.setMyCharacter);
-  const [mode, setMode] = useState<Mode>('basic');
-  const [joinId, setJoinId] = useState('');
+  const [mode, setMode] = useState<Mode>((searchParams.get('mode') as Mode) || 'basic');
+  const [joinId, setJoinId] = useState(searchParams.get('join') || '');
   const [stakeInput, setStakeInput] = useState('');
   const [loading, setLoading] = useState('');
   const [error, setError] = useState('');

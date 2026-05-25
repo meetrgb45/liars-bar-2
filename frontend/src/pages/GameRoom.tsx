@@ -304,7 +304,10 @@ export default function GameRoom() {
             </div>
             {canStart && <button className="btn green" style={{ fontSize: '1.1rem', padding: '0.7rem 2rem' }} onClick={startGame} disabled={loading}>{loading ? 'Dealing...' : 'Deal the Cards'}</button>}
             {error && <p style={{ color: '#ffb4ab', fontSize: '0.7rem', marginTop: '0.5rem' }}>{error}</p>}
-            <p style={{ color: '#5a4a3a', fontSize: '0.65rem', marginTop: '1rem' }}>Share Table ID: {id}</p>
+            <p style={{ color: '#5a4a3a', fontSize: '0.65rem', marginTop: '1rem' }}>Table #{id}</p>
+            <button onClick={() => { const url = `${window.location.origin}/lobby?join=${id}&mode=${mode}`; navigator.clipboard.writeText(url); setError('Link copied!'); setTimeout(() => setError(''), 2000); }} className="btn" style={{ marginTop: '0.5rem', fontSize: '0.8rem', padding: '0.4rem 1.2rem' }}>
+              Copy Invite Link
+            </button>
           </div>
         )}
 
