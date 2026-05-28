@@ -6,6 +6,16 @@
 2. **Arbitrum Sepolia ETH** on all 4 accounts ([faucet](https://www.alchemy.com/faucets/arbitrum-sepolia))
 3. **USDC on Arb Sepolia** (for staked games — optional, can play free)
 4. **MetaMask** connected to Arbitrum Sepolia (Chain ID: 421614)
+5. **WebSocket server running** (for real-time sync between players)
+
+### Start the servers
+```bash
+# Terminal 1: WebSocket relay
+cd liarsbar2/ws-server && node server.js
+
+# Terminal 2: Frontend
+cd liarsbar2/frontend && npm run dev
+```
 
 ---
 

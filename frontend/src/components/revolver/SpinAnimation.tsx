@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { SpinOutcome } from '../../hooks/useSpin';
+import { sounds } from '../../lib/sounds';
 
 interface Props {
   outcome: SpinOutcome;
@@ -8,6 +10,11 @@ interface Props {
 }
 
 export default function SpinAnimation({ outcome, spinning, onDismiss }: Props) {
+  useEffect(() => {
+    if (spinning && !outcome) sounds.revolverSpin();
+    if (outcome === 'click') sounds.click();
+    if (outcome === 'bang') sounds.gunShot();
+  }, [spinning, outcome]);
   return (
     <AnimatePresence>
       {(spinning || outcome) && (

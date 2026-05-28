@@ -83,6 +83,14 @@ npm run dev
 ```
 Open http://localhost:5173
 
+### Run WebSocket Server (real-time sync)
+```bash
+cd liarsbar2/ws-server
+npm install
+node server.js
+```
+Runs on port 8080. Health check: http://localhost:8080/health
+
 ### Deploy Contracts
 ```bash
 cd liarsbar2/contracts

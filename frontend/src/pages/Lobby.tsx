@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount, useConnect, useDisconnect, useWriteContract, usePublicClient } from 'wagmi';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -55,8 +55,19 @@ export default function Lobby() {
   const [loading, setLoading] = useState('');
   const [error, setError] = useState('');
   const [showRules, setShowRules] = useState(false);
+  const [inviteStake, setInviteStake] = useState<string | null>(null);
 
+  const isInvite = !!searchParams.get('join');
   const modeContract = MODE_CONFIG[mode];
+
+  // Read stake for invite link
+  useEffect(() => {
+    if (!isInvite || !publicClient || !joinId) return;
+    publicClient.readContract({
+      address: modeContract.address, abi: modeContract.abi, functionName: 'getStakeAmount', args: [BigInt(joinId)],
+    }).then((s: any) => setInviteStake(Number(s) > 0 ? (Number(s) / 1e6).toString() : 'Free'))
+      .catch(() => setInviteStake(null));
+  }, [isInvite, publicClient, joinId, modeContract]);
 
   const createGame = async () => {
     setLoading('Creating...'); setError('');
@@ -133,18 +144,27 @@ export default function Lobby() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
-          {/* Mode selector */}
+          {/* Mode selector — locked if invite */}
           <div style={{ display: 'flex', gap: '0.5rem', width: '100%', alignItems: 'center' }}>
             {(Object.keys(MODE_CONFIG) as Mode[]).map((m) => (
-              <button key={m} onClick={() => setMode(m)} className={`btn ${mode === m ? 'green' : ''}`} style={{
+              <button key={m} onClick={() => !isInvite && setMode(m)} className={`btn ${mode === m ? 'green' : ''}`} style={{
                 flex: 1, padding: '0.55rem 0', fontSize: '0.85rem',
-                opacity: mode === m ? 1 : 0.6,
+                opacity: mode === m ? 1 : 0.4,
+                cursor: isInvite ? 'default' : 'pointer',
               }}>
                 {MODE_CONFIG[m].label}
               </button>
             ))}
             <button onClick={() => setShowRules(true)} style={{ width: 32, height: 32, borderRadius: '50%', background: '#1a1008', border: '2px solid #5a4a3a', color: '#c9a84c', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>?</button>
           </div>
+
+          {/* Invite info banner */}
+          {isInvite && (
+            <div style={{ width: '100%', padding: '0.6rem', background: '#c9a84c15', border: '1px solid #c9a84c40', borderRadius: '0.3rem', textAlign: 'center' }}>
+              <p style={{ fontSize: '0.8rem', color: '#dfd5b4', margin: 0 }}>You're invited to Table #{joinId}</p>
+              <p style={{ fontSize: '0.7rem', color: '#8b7b5a', margin: '0.2rem 0 0' }}>{MODE_CONFIG[mode].label} Mode {inviteStake ? `• Stake: ${inviteStake === 'Free' ? 'Free' : inviteStake + ' USDC'}` : ''}</p>
+            </div>
+          )}
 
           {!isConnected ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
@@ -184,10 +204,12 @@ export default function Lobby() {
                 <button onClick={() => setMyCharacter((myCharacter + 1) % CHARACTERS.length)} style={{ width: 40, height: 40, borderRadius: '50%', background: '#2a1a0a', border: 'none', color: '#dfd5b4', fontSize: '1.3rem', cursor: 'pointer' }}>&gt;</button>
               </div>
 
-              <button className="btn green" style={{ fontSize: '1.2rem', padding: '0.7rem 2rem', width: '100%' }} onClick={createGame} disabled={!!loading}>
-                {loading || 'New Table'}
+              <button className="btn green" style={{ fontSize: '1.2rem', padding: '0.7rem 2rem', width: '100%' }} onClick={isInvite ? joinGame : createGame} disabled={!!loading}>
+                {loading || (isInvite ? 'Sit Down' : 'New Table')}
               </button>
 
+              {!isInvite && (
+              <>
               {/* Stake input */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
                 <span style={{ fontSize: '0.7rem', color: '#8b7b5a', whiteSpace: 'nowrap' }}>Stake (USDC)</span>
@@ -208,6 +230,8 @@ export default function Lobby() {
                   {loading === 'Joining...' ? '...' : 'Sit Down'}
                 </button>
               </div>
+              </>
+              )}
 
               {error && (
                 <div style={{ width: '100%', padding: '0.5rem', background: 'rgba(139,26,26,0.2)', border: '1px solid #8b1a1a', borderRadius: '0.3rem', fontSize: '0.65rem', color: '#ffb4ab', wordBreak: 'break-all' }}>

@@ -15,6 +15,7 @@ import {
   CHAOS_GAME_ADDRESS, CHAOS_GAME_ABI,
 } from '../lib/contracts';
 import { getGasOverrides } from '../lib/gas';
+import { sounds, isMuted, toggleMute } from '../lib/sounds';
 import { shortenAddress, targetName } from '../lib/cardUtils';
 import { CHARACTERS } from '../lib/characters';
 import SpinAnimation from '../components/revolver/SpinAnimation';
@@ -65,6 +66,7 @@ export default function GameRoom() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [muted, setMuted] = useState(isMuted());
   const [challengePhase, setChallengePhase] = useState<'accusation' | 'revealing' | 'verdict-lie' | 'verdict-valid' | null>(null);
   const [challengeAccuser, setChallengeAccuser] = useState(0);
   const [challengeAccused, setChallengeAccused] = useState(0);
@@ -78,6 +80,9 @@ export default function GameRoom() {
   const { notifyStateChanged } = useWebSocket();
 
   useEffect(() => { if (id) { setGameId(Number(id)); setGameMode(mode); } }, [id, mode, setGameId, setGameMode]);
+
+  // Sound on game over
+  useEffect(() => { if (state === 'GameOver') sounds.gameOver(); }, [state]);
 
   useEffect(() => {
     if (round > 0 && round !== prevRoundRef.current) {
@@ -124,7 +129,8 @@ export default function GameRoom() {
       setChallengeAccuser(accuserIdx);
       setChallengeAccused(accusedIdx >= 0 ? accusedIdx : 0);
       setChallengePhase('accusation');
-      setTimeout(() => setChallengePhase('revealing'), 2000);
+      sounds.gong();
+      setTimeout(() => { setChallengePhase('revealing'); sounds.cardFlip(); }, 2000);
     }
     if (prevStateRef.current === 'Challenging' && state === 'Spinning') {
       // Wait for revealedCards before showing verdict
@@ -159,6 +165,7 @@ export default function GameRoom() {
       const hash = await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'startGame', args: [BigInt(id!)], ...gas });
       await publicClient!.waitForTransactionReceipt({ hash });
       notifyStateChanged();
+      sounds.gameStart();
     } catch (e: any) { setError(e.shortMessage || e.message); }
     setLoading(false);
   };
@@ -176,6 +183,7 @@ export default function GameRoom() {
         }
         markCardsPlayed(selectedCards);
         notifyStateChanged();
+        sounds.cardsFlip();
         return;
       } catch (e: any) {
         const msg = e.shortMessage || e.message || '';
@@ -196,6 +204,7 @@ export default function GameRoom() {
         const gas = await getGasOverrides(publicClient!);
         await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'callLiar', args: [BigInt(id!)], ...gas });
         notifyStateChanged();
+        sounds.liar();
         return;
       } catch (e: any) {
         const msg = e.shortMessage || e.message || '';
@@ -259,6 +268,7 @@ export default function GameRoom() {
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.65rem', color: '#c9a84c', fontFamily: 'monospace' }}>{address ? shortenAddress(address) : ''}</span>
+          <button onClick={() => setMuted(toggleMute())} style={{ width: 22, height: 22, borderRadius: '50%', background: 'none', border: '1.5px solid #5a4a3a', color: muted ? '#e94560' : '#8b7b5a', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{muted ? '♪' : '♫'}</button>
           <button onClick={() => setShowRules(true)} style={{ width: 22, height: 22, borderRadius: '50%', background: 'none', border: '1.5px solid #5a4a3a', color: '#8b7b5a', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>?</button>
         </div>
       </nav>
