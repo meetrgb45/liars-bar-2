@@ -116,20 +116,25 @@ export default function Lobby() {
   return (
     <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
       <div className="cards-bg">
-        {Array.from({ length: 16 }, (_, i) => {
-          const cards = ['ace1','king1','queen1','joker1','back1'];
-          const left = ((i * 37 + 13) % 90) + 3;
-          const top = ((i * 53 + 7) % 90) + 3;
-          const rot = ((i * 29) % 90) - 45;
-          return (
-            <div key={i} className="floating-card" style={{
-              backgroundImage: `url(/playing_card/${cards[i % cards.length]}.png)`,
-              left: `${left}%`, top: `${top}%`,
-              ['--rot' as any]: `${rot}deg`,
-              animationDelay: `${i * 0.04}s`,
-            }} />
-          );
-        })}
+        {[
+          { card: 'ace1', left: '3%', top: '15%', rot: '-12deg' },
+          { card: 'king1', left: '88%', top: '8%', rot: '15deg' },
+          { card: 'queen1', left: '80%', top: '60%', rot: '-10deg' },
+          { card: 'joker1', left: '8%', top: '65%', rot: '22deg' },
+          { card: 'back1', left: '50%', top: '85%', rot: '-20deg' },
+          { card: 'king1', left: '15%', top: '38%', rot: '8deg' },
+          { card: 'ace1', left: '92%', top: '40%', rot: '-16deg' },
+          { card: 'queen1', left: '60%', top: '12%', rot: '5deg' },
+          { card: 'back1', left: '35%', top: '55%', rot: '-30deg' },
+          { card: 'joker1', left: '70%', top: '80%', rot: '18deg' },
+        ].map((c, i) => (
+          <div key={i} className="floating-card static" style={{
+            backgroundImage: `url(/playing_card/${c.card}.png)`,
+            left: c.left,
+            top: c.top,
+            ['--rot' as any]: c.rot,
+          }} />
+        ))}
       </div>
 
       <div className="paperboard-panel" style={{ position: 'relative', zIndex: 10, width: 440, padding: '2rem', paddingTop: '5rem' }}>
