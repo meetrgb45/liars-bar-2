@@ -5,6 +5,7 @@ import { config } from './lib/wagmi';
 import Landing from './pages/Landing';
 import Lobby from './pages/Lobby';
 import GameRoom from './pages/GameRoom';
+import Roadmap from './pages/Roadmap';
 
 const queryClient = new QueryClient();
 
@@ -16,6 +17,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/lobby" element={<Lobby />} />
+            <Route path="/roadmap" element={<Roadmap />} />
             <Route path="/game/:mode/:id" element={<GameRoom />} />
           </Routes>
         </BrowserRouter>
