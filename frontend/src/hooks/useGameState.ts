@@ -89,6 +89,28 @@ export function useGameState() {
           }) as bigint;
           setStakeAmount(stake);
         } catch {}
+
+        // Revealed cards (so non-accusers also see them)
+        try {
+          let revealed: number[] = [];
+          if (gameMode === 'chaos') {
+            const card = await publicClient.readContract({
+              address, abi, functionName: 'getRevealedCard', args: [BigInt(gameId)],
+            }) as number;
+            if (card !== undefined) revealed = [Number(card)];
+          } else {
+            const cards = await publicClient.readContract({
+              address, abi, functionName: 'getRevealedCards', args: [BigInt(gameId)],
+            }) as number[];
+            if (cards && cards.length > 0) revealed = cards.map(Number);
+          }
+          if (revealed.length > 0) {
+            const current = useGameStore.getState().revealedCards;
+            if (current.length === 0) {
+              useGameStore.getState().setRevealedCards(revealed);
+            }
+          }
+        } catch {}
       } catch (e) { console.error('Poll error:', e); }
     };
     poll();

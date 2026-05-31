@@ -119,7 +119,15 @@ export default function GameRoom() {
       challengeResolvedRef.current = true;
       setTimeout(resolveChallenge, 3000);
     }
-  }, [state, cofheReady, iAmChallenger, resolveChallenge]);
+    // Non-accuser: if we detect Challenging state and overlay isn't showing, show it
+    if (state === 'Challenging' && !challengePhase) {
+      const accuserIdx = currentTurnIndex;
+      const accusedIdx = players.findIndex(p => p.addr?.toLowerCase() === lastClaimant?.toLowerCase());
+      setChallengeAccuser(accuserIdx);
+      setChallengeAccused(accusedIdx >= 0 ? accusedIdx : 0);
+      setChallengePhase('revealing');
+    }
+  }, [state, cofheReady, iAmChallenger, resolveChallenge, challengePhase, currentTurnIndex, lastClaimant, players]);
 
   // Drive challenge overlay phases based on state transitions
   useEffect(() => {
@@ -132,24 +140,33 @@ export default function GameRoom() {
       sounds.gong();
       setTimeout(() => { setChallengePhase('revealing'); sounds.cardFlip(); }, 2000);
     }
-    if (prevStateRef.current === 'Challenging' && state === 'Spinning') {
-      // Wait for revealedCards before showing verdict
+    if ((prevStateRef.current === 'Challenging' && state === 'Spinning') ||
+        (challengePhase === 'revealing' && state === 'Spinning')) {
+      // Wait for revealedCards before showing verdict (max 12s timeout)
+      let attempts = 0;
       const waitForReveal = () => {
+        attempts++;
         const cards = useGameStore.getState().revealedCards;
         if (cards.length > 0) {
           const pendingSpinner = useGameStore.getState().pendingSpinner;
           const spinnerIsAccused = pendingSpinner?.toLowerCase() === players[challengeAccused]?.addr?.toLowerCase();
           setChallengePhase(spinnerIsAccused ? 'verdict-lie' : 'verdict-valid');
           setTimeout(() => setChallengePhase(null), 4000);
-        } else {
-          // Cards not revealed yet, check again in 1s
+        } else if (attempts < 12) {
           setTimeout(waitForReveal, 1000);
+        } else {
+          // Timeout — dismiss overlay so game isn't stuck
+          setChallengePhase(null);
         }
       };
       waitForReveal();
     }
+    // If state moved past Spinning and overlay is still showing, dismiss it
+    if (state === 'PlayerTurn' && challengePhase) {
+      setChallengePhase(null);
+    }
     prevStateRef.current = state;
-  }, [state, currentTurnIndex, lastClaimant, players, challengeAccused]);
+  }, [state, currentTurnIndex, lastClaimant, players, challengeAccused, challengePhase]);
 
   const isMyTurn = players[currentTurnIndex]?.addr?.toLowerCase() === address?.toLowerCase();
   const playerCount = players.filter((p) => p.addr !== '0x0000000000000000000000000000000000000000').length;
@@ -354,7 +371,7 @@ export default function GameRoom() {
         )}
 
         {state === 'GameOver' && (
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center' }} id="game-result-card">
             <h2 style={{ fontSize: '2.2rem', color: '#c9a84c', marginBottom: '1.5rem' }}>WINNER!</h2>
             {(() => {
               const winnerPlayer = players.find(p => p.alive && p.addr !== '0x0000000000000000000000000000000000000000');
@@ -365,6 +382,7 @@ export default function GameRoom() {
                   <div className="player-card" style={{ backgroundImage: `url(${winnerChar.img})`, width: 130, height: 130, boxShadow: '0 0 24px #c9a84c50' }} />
                   <span style={{ fontSize: '1.3rem', color: '#c9a84c', fontWeight: 700 }}>{winnerChar.name}</span>
                   {winnerPlayer && <span style={{ fontSize: '0.7rem', color: '#8b7b5a', fontFamily: 'monospace' }}>{shortenAddress(winnerPlayer.addr)}</span>}
+                  {stakeAmount > 0n && <span style={{ fontSize: '0.85rem', color: '#22c55e', marginTop: '0.3rem' }}>Won {Number(stakeAmount * 4n * 95n / 100n) / 1e6} USDC</span>}
                 </div>
               );
             })()}
@@ -380,6 +398,28 @@ export default function GameRoom() {
               })}
             </div>
             <button className="btn green" onClick={() => navigate('/lobby')}>Another Round</button>
+            <div style={{ display: 'flex', gap: '0.8rem', marginTop: '1rem', justifyContent: 'center' }}>
+              <button className="btn" style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }} onClick={() => {
+                // Download result as image
+                const el = document.getElementById('game-result-card');
+                if (!el) return;
+                import('html-to-image').then(({ toPng }) => {
+                  toPng(el).then((url) => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `bluff-barrel-result-${id}.png`;
+                    a.click();
+                  });
+                }).catch(() => alert('Install html-to-image for download'));
+              }}>Download Result</button>
+              <button className="btn" style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }} onClick={() => {
+                const winnerP = players.find(p => p.alive && p.addr !== '0x0000000000000000000000000000000000000000');
+                const winnerName = winnerP ? CHARACTERS[winnerP.characterId % CHARACTERS.length].name : 'Unknown';
+                const pot = stakeAmount > 0n ? `${Number(stakeAmount * 4n) / 1e6} USDC` : 'bragging rights';
+                const text = `I just played Bluff and Barrel! ${winnerName} won ${pot} in ${mode} mode. On-chain deception powered by @FhenixIO FHE.`;
+                window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(window.location.origin)}`, '_blank');
+              }}>Share on X</button>
+            </div>
           </div>
         )}
       </div>
