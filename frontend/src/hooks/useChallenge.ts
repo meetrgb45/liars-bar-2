@@ -7,7 +7,7 @@ import {
   CHAOS_GAME_ADDRESS, CHAOS_GAME_ABI,
 } from '../lib/contracts';
 import { useGameStore } from '../stores/gameStore';
-import { getGasOverrides } from '../lib/gas';
+import { getGasOverrides, getHeavyGasOverrides } from '../lib/gas';
 
 function getContracts(mode: string) {
   if (mode === 'devil') return { address: DEVIL_GAME_ADDRESS, abi: DEVIL_GAME_ABI };
@@ -46,7 +46,7 @@ export function useChallenge() {
           .withoutPermit()
           .execute();
 
-        const gas = await getGasOverrides(publicClient);
+        const gas = await getHeavyGasOverrides(publicClient, 3_000_000n);
         await writeContractAsync({
           address, abi, functionName: 'publishChallengeResult',
           args: [BigInt(gameId), ctHash, decryptedValue, signature], ...gas,
@@ -80,7 +80,7 @@ export function useChallenge() {
             }
 
             if (cardHashes.length > 0) {
-              const gas2 = await getGasOverrides(publicClient);
+              const gas2 = await getHeavyGasOverrides(publicClient, 3_000_000n);
               await writeContractAsync({
                 address, abi, functionName: 'publishCardReveal',
                 args: [BigInt(gameId), cardHashes, cardResults, cardSigs], ...gas2,

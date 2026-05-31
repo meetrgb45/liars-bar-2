@@ -1,35 +1,34 @@
 import type { PublicClient } from 'viem';
+import { parseGwei } from 'viem';
 
-/**
- * Gas overrides for Arb Sepolia.
- * Most txs work fine without overrides (wallet estimates correctly).
- * Only FHE-heavy txs (startGame, publishChallengeResult) need a boost.
- */
+const ARB_MIN_MAX_FEE = parseGwei('0.1');
+const ARB_MIN_PRIORITY = parseGwei('0.01');
+
+function maxBigInt(a: bigint, b: bigint): bigint {
+  return a > b ? a : b;
+}
+
 export async function getGasOverrides(publicClient: PublicClient) {
   try {
     const fees = await publicClient.estimateFeesPerGas();
-    // Use 2x for fee (enough to clear baseFee fluctuations)
     return {
-      maxFeePerGas: (fees.maxFeePerGas ?? 0n) * 2n,
-      maxPriorityFeePerGas: (fees.maxPriorityFeePerGas ?? 0n) * 2n,
+      maxFeePerGas: maxBigInt((fees.maxFeePerGas ?? 0n) * 2n, ARB_MIN_MAX_FEE),
+      maxPriorityFeePerGas: maxBigInt((fees.maxPriorityFeePerGas ?? 0n) * 2n, ARB_MIN_PRIORITY),
     };
   } catch {
-    return {};
+    return { maxFeePerGas: ARB_MIN_MAX_FEE, maxPriorityFeePerGas: ARB_MIN_PRIORITY };
   }
 }
 
-/**
- * For heavy FHE transactions (startGame with 200+ FHE ops).
- * Uses higher multiplier to avoid underestimation.
- */
-export async function getHeavyGasOverrides(publicClient: PublicClient) {
+export async function getHeavyGasOverrides(publicClient: PublicClient, gasLimit = 8_000_000n) {
   try {
     const fees = await publicClient.estimateFeesPerGas();
     return {
-      maxFeePerGas: (fees.maxFeePerGas ?? 0n) * 5n,
-      maxPriorityFeePerGas: (fees.maxPriorityFeePerGas ?? 0n) * 5n,
+      maxFeePerGas: maxBigInt((fees.maxFeePerGas ?? 0n) * 5n, parseGwei('0.2')),
+      maxPriorityFeePerGas: maxBigInt((fees.maxPriorityFeePerGas ?? 0n) * 5n, parseGwei('0.05')),
+      gas: gasLimit,
     };
   } catch {
-    return {};
+    return { maxFeePerGas: parseGwei('0.2'), maxPriorityFeePerGas: parseGwei('0.05'), gas: gasLimit };
   }
 }

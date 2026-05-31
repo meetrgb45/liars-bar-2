@@ -97,6 +97,7 @@ export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, on
               }
             </div>
             <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>{revealedCards.length > 0 ? 'Cards revealed!' : 'Decrypting via FHE network...'}</p>
+            <button onClick={onDismiss} style={{ marginTop: '1rem', fontSize: '0.65rem', color: '#5a4a3a', background: 'none', cursor: 'pointer', textDecoration: 'underline' }}>dismiss</button>
           </motion.div>
         )}
 

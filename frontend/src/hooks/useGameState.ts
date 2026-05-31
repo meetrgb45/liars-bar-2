@@ -44,8 +44,7 @@ export function useGameState() {
         if (newState === 'Challenging' && prevState !== 'Challenging') {
           useGameStore.getState().setRevealedCards([]);
         }
-        if (newState === 'Spinning' && prevState !== 'Spinning') {
-          // Clear so fresh reveal data can be loaded
+        if ((newState === 'Spinning' || newState === 'MultiSpinning' || newState === 'Targeting' || newState === 'Shooting') && prevState === 'Challenging') {
           useGameStore.getState().setRevealedCards([]);
         }
         if (Number(round) !== currentRound) {
@@ -116,7 +115,7 @@ export function useGameState() {
 
         // Revealed cards (only read after challenge is resolved - Spinning state or later)
         const stateForReveal = getStateMap(gameMode)[state] || 'WaitingForPlayers';
-        if (stateForReveal === 'Spinning' || stateForReveal === 'MultiSpinning' || stateForReveal === 'Shooting') {
+        if (stateForReveal === 'Spinning' || stateForReveal === 'MultiSpinning' || stateForReveal === 'Shooting' || stateForReveal === 'Targeting' || stateForReveal === 'MultiTargeting') {
           try {
             let revealed: number[] = [];
             if (gameMode === 'chaos') {
