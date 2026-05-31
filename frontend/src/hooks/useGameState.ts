@@ -7,6 +7,7 @@ import {
   REVOLVER_ADDRESS, REVOLVER_ABI,
 } from '../lib/contracts';
 import { useGameStore } from '../stores/gameStore';
+import { getStateMap } from '../stores/gameStore';
 
 function getContracts(mode: string) {
   if (mode === 'devil') return { address: DEVIL_GAME_ADDRESS, abi: DEVIL_GAME_ABI };
@@ -36,10 +37,18 @@ export function useGameState() {
         }) as [number, number, number, number, number, string];
         updateFromChain({ state, round, targetCard, currentTurnIndex, aliveCount, winner });
 
-        // Clear revealedCards when entering a new challenge
+        // Clear revealedCards when entering a new challenge or new round
         const prevState = useGameStore.getState().state;
-        const newState = (['WaitingForPlayers', 'Dealing', 'PlayerTurn', 'Challenging', 'Spinning', 'GameOver'] as const)[state] || 'WaitingForPlayers';
+        const currentRound = useGameStore.getState().round;
+        const newState = getStateMap(gameMode)[state] || 'WaitingForPlayers';
         if (newState === 'Challenging' && prevState !== 'Challenging') {
+          useGameStore.getState().setRevealedCards([]);
+        }
+        if (newState === 'Spinning' && prevState !== 'Spinning') {
+          // Clear so fresh reveal data can be loaded
+          useGameStore.getState().setRevealedCards([]);
+        }
+        if (Number(round) !== currentRound) {
           useGameStore.getState().setRevealedCards([]);
         }
 
@@ -97,27 +106,30 @@ export function useGameState() {
           setStakeAmount(stake);
         } catch {}
 
-        // Revealed cards (so non-accusers also see them)
-        try {
-          let revealed: number[] = [];
-          if (gameMode === 'chaos') {
-            const card = await publicClient.readContract({
-              address, abi, functionName: 'getRevealedCard', args: [BigInt(gameId)],
-            }) as number;
-            if (card !== undefined) revealed = [Number(card)];
-          } else {
-            const cards = await publicClient.readContract({
-              address, abi, functionName: 'getRevealedCards', args: [BigInt(gameId)],
-            }) as number[];
-            if (cards && cards.length > 0) revealed = cards.map(Number);
-          }
-          if (revealed.length > 0) {
-            const current = useGameStore.getState().revealedCards;
-            if (current.length === 0) {
-              useGameStore.getState().setRevealedCards(revealed);
+        // Revealed cards (only read after challenge is resolved - Spinning state or later)
+        const stateForReveal = getStateMap(gameMode)[state] || 'WaitingForPlayers';
+        if (stateForReveal === 'Spinning' || stateForReveal === 'MultiSpinning' || stateForReveal === 'Shooting') {
+          try {
+            let revealed: number[] = [];
+            if (gameMode === 'chaos') {
+              const card = await publicClient.readContract({
+                address, abi, functionName: 'getRevealedCard', args: [BigInt(gameId)],
+              }) as number;
+              if (card !== undefined) revealed = [Number(card)];
+            } else {
+              const cards = await publicClient.readContract({
+                address, abi, functionName: 'getRevealedCards', args: [BigInt(gameId)],
+              }) as number[];
+              if (cards && cards.length > 0) revealed = cards.map(Number);
             }
-          }
-        } catch {}
+            if (revealed.length > 0) {
+              const current = useGameStore.getState().revealedCards;
+              if (current.length === 0) {
+                useGameStore.getState().setRevealedCards(revealed);
+              }
+            }
+          } catch {}
+        }
       } catch (e) { console.error('Poll error:', e); }
     };
     poll();

@@ -89,8 +89,10 @@ export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, on
                       style={{ width: 70, height: 100, borderRadius: '0.4rem', backgroundImage: `url(${CARD_IMGS[card] || '/playing_card/back1.png'})`, backgroundSize: 'cover', backgroundPosition: 'center', border: `3px solid ${isCardValid(card) ? '#abcfb8' : '#e94560'}`, boxShadow: isCardValid(card) ? '0 0 12px rgba(171,207,184,0.5)' : '0 0 12px rgba(233,69,96,0.5)' }} />
                   ))
                 : Array.from({ length: lastClaimCount }, (_, i) => (
-                    <motion.div key={i} animate={{ rotateY: [0, 360] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }}
-                      style={{ width: 70, height: 100, borderRadius: '0.4rem', backgroundImage: 'url(/playing_card/back1.png)', backgroundSize: 'cover', border: '2px solid #5a4a3a' }} />
+                    <motion.div key={i}
+                      animate={{ rotateY: [0, 180, 360] }}
+                      transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.2, ease: 'easeInOut' }}
+                      style={{ width: 70, height: 100, borderRadius: '0.4rem', backgroundImage: 'url(/playing_card/back1.png)', backgroundSize: 'cover', backgroundPosition: 'center', border: '2px solid #5a4a3a', transformStyle: 'preserve-3d' }} />
                   ))
               }
             </div>

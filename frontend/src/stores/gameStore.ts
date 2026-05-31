@@ -6,7 +6,7 @@ const BASIC_STATE_MAP: GameState[] = ['WaitingForPlayers', 'Dealing', 'PlayerTur
 const DEVIL_STATE_MAP: GameState[] = ['WaitingForPlayers', 'Dealing', 'PlayerTurn', 'Challenging', 'Spinning', 'MultiSpinning', 'GameOver'];
 const CHAOS_STATE_MAP: GameState[] = ['WaitingForPlayers', 'Dealing', 'PlayerTurn', 'Challenging', 'Targeting', 'MultiTargeting', 'Shooting', 'GameOver'];
 
-function getStateMap(mode: string): GameState[] {
+export function getStateMap(mode: string): GameState[] {
   if (mode === 'devil') return DEVIL_STATE_MAP;
   if (mode === 'chaos') return CHAOS_STATE_MAP;
   return BASIC_STATE_MAP;
