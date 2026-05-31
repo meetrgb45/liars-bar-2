@@ -1,7 +1,16 @@
 import { create } from 'zustand';
 
-export type GameState = 'WaitingForPlayers' | 'Dealing' | 'PlayerTurn' | 'Challenging' | 'Spinning' | 'GameOver';
-const STATE_MAP: GameState[] = ['WaitingForPlayers', 'Dealing', 'PlayerTurn', 'Challenging', 'Spinning', 'GameOver'];
+export type GameState = 'WaitingForPlayers' | 'Dealing' | 'PlayerTurn' | 'Challenging' | 'Spinning' | 'MultiSpinning' | 'Targeting' | 'MultiTargeting' | 'Shooting' | 'GameOver';
+
+const BASIC_STATE_MAP: GameState[] = ['WaitingForPlayers', 'Dealing', 'PlayerTurn', 'Challenging', 'Spinning', 'GameOver'];
+const DEVIL_STATE_MAP: GameState[] = ['WaitingForPlayers', 'Dealing', 'PlayerTurn', 'Challenging', 'Spinning', 'MultiSpinning', 'GameOver'];
+const CHAOS_STATE_MAP: GameState[] = ['WaitingForPlayers', 'Dealing', 'PlayerTurn', 'Challenging', 'Targeting', 'MultiTargeting', 'Shooting', 'GameOver'];
+
+function getStateMap(mode: string): GameState[] {
+  if (mode === 'devil') return DEVIL_STATE_MAP;
+  if (mode === 'chaos') return CHAOS_STATE_MAP;
+  return BASIC_STATE_MAP;
+}
 
 export interface PlayerInfo {
   addr: string;
@@ -94,14 +103,14 @@ export const useGameStore = create<GameStore>((set) => ({
   clearSelection: () => set({ selectedCards: [] }),
   markCardsPlayed: (indices) => set((s) => ({ playedCards: [...s.playedCards, ...indices], selectedCards: [] })),
   resetPlayedCards: () => set((s) => ({ playedCards: [], selectedCards: [], myHand: Array(s.gameMode === 'chaos' ? 3 : 5).fill(null), revealedCards: [] })),
-  updateFromChain: (data) => set({
-    state: STATE_MAP[Number(data.state)] ?? 'WaitingForPlayers',
+  updateFromChain: (data) => set((s) => ({
+    state: getStateMap(s.gameMode)[Number(data.state)] ?? 'WaitingForPlayers',
     round: data.round,
     targetCard: data.targetCard,
     currentTurnIndex: data.currentTurnIndex,
     aliveCount: data.aliveCount,
     winner: data.winner,
-  }),
+  })),
   setPlayers: (players) => set({ players }),
   setLastClaim: (claimant, count) => set({ lastClaimant: claimant, lastClaimCount: count }),
   setChamberPointer: (ptr) => set({ chamberPointer: ptr }),

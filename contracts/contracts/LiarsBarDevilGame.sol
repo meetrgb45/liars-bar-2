@@ -272,6 +272,10 @@ contract LiarsBarDevilGame {
             if (fired) {
                 _eliminatePlayerNoRound(gameId, spinner);
             }
+
+            // Stop if game ended during elimination
+            if (g.state == GameState.GameOver) return;
+
             g.spinsResolved++;
 
             // Check if all spins resolved

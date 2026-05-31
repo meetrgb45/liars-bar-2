@@ -39,30 +39,34 @@ export function useSpin() {
 
     setSpinning(true);
     setOutcome(null);
-    try {
-      const ctHash = await publicClient.readContract({
-        address: REVOLVER_ADDRESS, abi: REVOLVER_ABI, functionName: 'getPendingCtHash', args: [BigInt(gameId)],
-      }) as bigint;
 
-      if (!ctHash || ctHash === 0n) { setSpinning(false); return; }
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const ctHash = await publicClient.readContract({
+          address: REVOLVER_ADDRESS, abi: REVOLVER_ABI, functionName: 'getPendingCtHash', args: [BigInt(gameId)],
+        }) as bigint;
 
-      const { decryptedValue, signature } = await client
-        .decryptForTx(ctHash)
-        .withoutPermit()
-        .execute();
+        if (!ctHash || ctHash === 0n) { setSpinning(false); return; }
 
-      await writeContractAsync({
-        address: gameAddr, abi, functionName: 'publishSpinResult',
-        args: [BigInt(gameId), ctHash, decryptedValue, signature],
-        ...(await getGasOverrides(publicClient!)),
-      });
+        const { decryptedValue, signature } = await client
+          .decryptForTx(ctHash)
+          .withoutPermit()
+          .execute();
 
-      setOutcome(decryptedValue === 1n ? 'bang' : 'click');
-    } catch (e: any) {
-      console.error('Spin resolution failed:', e);
-      if (e?.message?.includes('User rejected') || e?.message?.includes('denied')) {
+        await writeContractAsync({
+          address: gameAddr, abi, functionName: 'publishSpinResult',
+          args: [BigInt(gameId), ctHash, decryptedValue, signature],
+          ...(await getGasOverrides(publicClient!)),
+        });
+
+        setOutcome(decryptedValue === 1n ? 'bang' : 'click');
         setSpinning(false);
         return;
+      } catch (e: any) {
+        const msg = e?.message || '';
+        if (/User rejected|denied/i.test(msg)) { setSpinning(false); return; }
+        console.warn(`[spin] attempt ${attempt + 1} failed:`, msg);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 3000));
       }
     }
     setSpinning(false);

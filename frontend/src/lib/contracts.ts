@@ -1,10 +1,10 @@
-export const GAME_ADDRESS = (import.meta.env.VITE_GAME_ADDRESS || '0xF0EF07D0a1A1A4C78eD35562B5eb7B7b311E62A0') as `0x${string}`;
-export const DECK_ADDRESS = (import.meta.env.VITE_DECK_ADDRESS || '0xD407D06b2868E8d0ED28E57842DB3877b3FA7dF8') as `0x${string}`;
-export const REVOLVER_ADDRESS = (import.meta.env.VITE_REVOLVER_ADDRESS || '0x13e6C9CE2845545cbb741bFC2d3E14B84A628790') as `0x${string}`;
-export const DEVIL_GAME_ADDRESS = (import.meta.env.VITE_DEVIL_GAME_ADDRESS || '0x0821057DCD8bbABbbebe64c54a4C59d4fB7DEE0C') as `0x${string}`;
-export const DEVIL_DECK_ADDRESS = (import.meta.env.VITE_DEVIL_DECK_ADDRESS || '0xBb0ED4ce97a4bb5D92ecFA8Ba9d1a3B5aA706565') as `0x${string}`;
-export const CHAOS_GAME_ADDRESS = (import.meta.env.VITE_CHAOS_GAME_ADDRESS || '0xe8F9019455f7359E874648f7128429EaE8cB929C') as `0x${string}`;
-export const CHAOS_DECK_ADDRESS = (import.meta.env.VITE_CHAOS_DECK_ADDRESS || '0xfba0b763b71Dd67aF9b4cfE4acb2Dd11511A7c30') as `0x${string}`;
+export const GAME_ADDRESS = (import.meta.env.VITE_GAME_ADDRESS || '0x78e740d2F4Cb0f4C5E070A7b84220bef4687A071') as `0x${string}`;
+export const DECK_ADDRESS = (import.meta.env.VITE_DECK_ADDRESS || '0x590870B5D7A63Ee52c9d78102eD5005cF45EA514') as `0x${string}`;
+export const REVOLVER_ADDRESS = (import.meta.env.VITE_REVOLVER_ADDRESS || '0x81328CB7D03a9ea069eC6CA0D720aeED1383f881') as `0x${string}`;
+export const DEVIL_GAME_ADDRESS = (import.meta.env.VITE_DEVIL_GAME_ADDRESS || '0x157b6cA4955B55054470283A957BCc7a1E2b1Cf2') as `0x${string}`;
+export const DEVIL_DECK_ADDRESS = (import.meta.env.VITE_DEVIL_DECK_ADDRESS || '0x95D5B769b230d7fcBe67b80f9ea8d689F944dd58') as `0x${string}`;
+export const CHAOS_GAME_ADDRESS = (import.meta.env.VITE_CHAOS_GAME_ADDRESS || '0x30A3EABc30Af3e0a53FC64aD1dBd2CF4c94175Aa') as `0x${string}`;
+export const CHAOS_DECK_ADDRESS = (import.meta.env.VITE_CHAOS_DECK_ADDRESS || '0x3B4CEEF3bf2b4Eeb653bBD19bf0b3b4c146aaE0E') as `0x${string}`;
 export const USDC_ADDRESS = (import.meta.env.VITE_USDC_ADDRESS || '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d') as `0x${string}`;
 
 export const GAME_ABI = [

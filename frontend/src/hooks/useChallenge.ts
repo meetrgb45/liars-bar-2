@@ -30,79 +30,76 @@ export function useChallenge() {
     const { address, abi } = getContracts(gameMode);
 
     setResolving(true);
-    try {
-      // Read pendingCtHash from contract
-      const ctHash = await publicClient.readContract({
-        address, abi, functionName: 'getPendingCtHash', args: [BigInt(gameId)],
-      }) as bigint;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const ctHash = await publicClient.readContract({
+          address, abi, functionName: 'getPendingCtHash', args: [BigInt(gameId)],
+        }) as bigint;
 
-      console.log('[challenge] ctHash:', ctHash.toString());
-      if (!ctHash || ctHash === 0n) {
-        console.log('[challenge] no pending ctHash');
+        if (!ctHash || ctHash === 0n) { setResolving(false); return; }
+
+        if (attempt === 0) await new Promise(r => setTimeout(r, 5000));
+        else await new Promise(r => setTimeout(r, 3000));
+
+        const { decryptedValue, signature } = await client
+          .decryptForTx(ctHash)
+          .withoutPermit()
+          .execute();
+
+        const gas = await getGasOverrides(publicClient);
+        await writeContractAsync({
+          address, abi, functionName: 'publishChallengeResult',
+          args: [BigInt(gameId), ctHash, decryptedValue, signature], ...gas,
+        });
+        console.log('[challenge] published!');
+
+        // Decrypt individual cards for reveal
+        try {
+          const revealHashes = await publicClient.readContract({
+            address, abi, functionName: 'getRevealCtHashes', args: [BigInt(gameId)],
+          }) as bigint[];
+
+          if (revealHashes && revealHashes.length > 0) {
+            await new Promise(r => setTimeout(r, 3000));
+            const cardHashes: bigint[] = [];
+            const cardResults: bigint[] = [];
+            const cardSigs: `0x${string}`[] = [];
+
+            for (const h of revealHashes) {
+              for (let cardAttempt = 0; cardAttempt < 3; cardAttempt++) {
+                try {
+                  const { decryptedValue: val, signature: sig } = await client.decryptForTx(h).withoutPermit().execute();
+                  cardHashes.push(h);
+                  cardResults.push(val);
+                  cardSigs.push(sig);
+                  break;
+                } catch {
+                  if (cardAttempt < 2) await new Promise(r => setTimeout(r, 2000));
+                }
+              }
+            }
+
+            if (cardHashes.length > 0) {
+              const gas2 = await getGasOverrides(publicClient);
+              await writeContractAsync({
+                address, abi, functionName: 'publishCardReveal',
+                args: [BigInt(gameId), cardHashes, cardResults, cardSigs], ...gas2,
+              });
+              useGameStore.getState().setRevealedCards(cardResults.map(v => Number(v)));
+            }
+          }
+        } catch (revealErr) {
+          console.warn('[challenge] card reveal failed:', revealErr);
+        }
+
         setResolving(false);
         return;
+      } catch (e: any) {
+        const msg = e?.message || '';
+        if (/User rejected|denied/i.test(msg)) { setResolving(false); return; }
+        console.warn(`[challenge] attempt ${attempt + 1} failed:`, msg);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 3000));
       }
-
-      // Wait for FHE network to process
-      console.log('[challenge] waiting 5s for FHE sync...');
-      await new Promise(r => setTimeout(r, 5000));
-
-      // Decrypt via CoFHE threshold network (public — no permit needed)
-      console.log('[challenge] decrypting...');
-      const { decryptedValue, signature } = await client
-        .decryptForTx(ctHash)
-        .withoutPermit()
-        .execute();
-
-      console.log('[challenge] result:', decryptedValue.toString(), '(1=allValid, 0=lie)');
-
-      // Publish result on-chain
-      const gas = await getGasOverrides(publicClient);
-      await writeContractAsync({
-        address, abi, functionName: 'publishChallengeResult',
-        args: [BigInt(gameId), ctHash, decryptedValue, signature], ...gas,
-      });
-      console.log('[challenge] published!');
-
-      // Now decrypt individual cards for reveal
-      try {
-        const revealHashes = await publicClient.readContract({
-          address, abi, functionName: 'getRevealCtHashes', args: [BigInt(gameId)],
-        }) as bigint[];
-
-        if (revealHashes && revealHashes.length > 0) {
-          console.log('[challenge] decrypting', revealHashes.length, 'cards for reveal...');
-          await new Promise(r => setTimeout(r, 3000));
-
-          const cardResults: bigint[] = [];
-          const cardSigs: `0x${string}`[] = [];
-          const cardHashes: bigint[] = [];
-
-          for (const h of revealHashes) {
-            const { decryptedValue: val, signature: sig } = await client
-              .decryptForTx(h)
-              .withoutPermit()
-              .execute();
-            cardHashes.push(h);
-            cardResults.push(val);
-            cardSigs.push(sig);
-          }
-
-          const gas2 = await getGasOverrides(publicClient);
-          await writeContractAsync({
-            address, abi, functionName: 'publishCardReveal',
-            args: [BigInt(gameId), cardHashes, cardResults, cardSigs], ...gas2,
-          });
-
-          // Store in local state
-          useGameStore.getState().setRevealedCards(cardResults.map(v => Number(v)));
-          console.log('[challenge] cards revealed:', cardResults.map(v => Number(v)));
-        }
-      } catch (revealErr) {
-        console.error('[challenge] card reveal failed (non-critical):', revealErr);
-      }
-    } catch (e) {
-      console.error('[challenge] resolution failed:', e);
     }
     setResolving(false);
   }, [publicClient, gameId, gameMode, cofheReady, writeContractAsync]);

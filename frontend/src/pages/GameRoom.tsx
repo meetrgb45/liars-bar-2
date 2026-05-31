@@ -162,7 +162,7 @@ export default function GameRoom() {
       waitForReveal();
     }
     // If state moved past Spinning and overlay is still showing, dismiss it
-    if (state === 'PlayerTurn' && challengePhase) {
+    if ((state === 'PlayerTurn' || state === 'GameOver' || state === 'MultiSpinning' || state === 'Targeting' || state === 'MultiTargeting' || state === 'Shooting') && challengePhase) {
       setChallengePhase(null);
     }
     prevStateRef.current = state;
@@ -322,7 +322,7 @@ export default function GameRoom() {
                 <div key={i} className="playing-card" style={{ backgroundImage: 'url(/playing_card/back1.png)', width: '4rem', marginLeft: i > 0 ? '-1rem' : 0 }} />
               ))}
             </div>
-            <span style={{ fontSize: '0.85rem', color: '#dfd5b4', fontStyle: 'italic' }}>claims {lastClaimCount} {targetName(targetCard)}{lastClaimCount > 1 ? 's' : ''}</span>
+            <span style={{ fontSize: '0.85rem', color: '#dfd5b4', fontStyle: 'italic' }}>claims {lastClaimCount} {targetName(targetCard, mode)}{lastClaimCount > 1 ? 's' : ''}</span>
           </div>
         )}
 
@@ -367,6 +367,67 @@ export default function GameRoom() {
             ) : (
               <p style={{ color: '#8b7b5a' }}>Waiting for trigger pull...</p>
             )}
+          </div>
+        )}
+
+        {state === 'MultiSpinning' && (
+          <div style={{ textAlign: 'center' }}>
+            <div className="heartbeat-vignette" />
+            <h3 style={{ fontSize: '1.3rem', color: '#e94560', marginBottom: '1rem' }}>DEVIL RETRIBUTION</h3>
+            <p style={{ fontSize: '0.85rem', color: '#dfd5b4', marginBottom: '1.5rem' }}>All players must face the barrel!</p>
+            <img src="/revolver_chamber.png" alt="" className="revolver-spin" style={{ width: 100, margin: '0 auto 1rem' }} />
+            {myPlayer?.alive && !spinning && (
+              <button className="btn red" style={{ fontSize: '1.1rem', padding: '0.7rem 2rem' }} onClick={async () => {
+                try {
+                  const gas = await getGasOverrides(publicClient!);
+                  await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'triggerMySpin', args: [BigInt(id!)], ...gas });
+                  notifyStateChanged();
+                  // After triggering, resolve the spin
+                  setTimeout(resolveSpin, 3000);
+                } catch (e: any) {
+                  if (!/User rejected|denied/i.test(e?.message || '')) setTimeout(() => resolveSpin(), 2000);
+                }
+              }}>Pull Trigger</button>
+            )}
+            {spinning && <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>Resolving...</p>}
+          </div>
+        )}
+
+        {/* Chaos: Targeting — pick who to shoot */}
+        {(state === 'Targeting' || state === 'MultiTargeting') && (
+          <div style={{ textAlign: 'center' }}>
+            <h3 style={{ fontSize: '1.3rem', color: '#a855f7', marginBottom: '1rem' }}>CHOOSE YOUR TARGET</h3>
+            <p style={{ fontSize: '0.85rem', color: '#dfd5b4', marginBottom: '1.5rem' }}>Pick a player to shoot</p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+              {players.filter((p, i) => p.alive && p.addr?.toLowerCase() !== address?.toLowerCase() && p.addr !== '0x0000000000000000000000000000000000000000').map((p) => {
+                const pIdx = players.indexOf(p);
+                const char = CHARACTERS[p.characterId % CHARACTERS.length];
+                return (
+                  <button key={pIdx} className="btn red" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', padding: '0.8rem' }} onClick={async () => {
+                    try {
+                      const gas = await getGasOverrides(publicClient!);
+                      const fn = state === 'MultiTargeting' ? 'chooseTargetMulti' : 'chooseTarget';
+                      await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: fn, args: [BigInt(id!), p.addr], ...gas });
+                      notifyStateChanged();
+                    } catch {}
+                  }}>
+                    <img src={char.img} alt="" style={{ width: 50, height: 50, borderRadius: '0.3rem' }} />
+                    <span style={{ fontSize: '0.7rem' }}>{char.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Chaos: Shooting — waiting for spin resolution */}
+        {state === 'Shooting' && (
+          <div style={{ textAlign: 'center' }}>
+            <div className="heartbeat-vignette" />
+            <img src="/revolver_chamber.png" alt="" className="revolver-spin" style={{ width: 100, margin: '0 auto 1rem' }} />
+            <p style={{ fontSize: '1rem', color: '#dfd5b4' }}>Shots firing...</p>
+            {!spinning && <button className="btn" style={{ marginTop: '1rem' }} onClick={resolveSpin}>Resolve Shot</button>}
+            {spinning && <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>Resolving...</p>}
           </div>
         )}
 
@@ -425,7 +486,7 @@ export default function GameRoom() {
       </div>
 
       {/* Bottom — Hand + Actions */}
-      {myPlayer?.alive && (state === 'PlayerTurn' || state === 'Challenging' || state === 'Spinning') && (
+      {myPlayer?.alive && (state === 'PlayerTurn' || state === 'Challenging' || state === 'Spinning' || state === 'MultiSpinning') && (
         <div style={{ padding: '1rem 1.5rem', background: 'rgba(0,0,0,0.5)', borderTop: '1px solid #3a2a1a', zIndex: 20 }}>
           <div className="chambers" style={{ justifyContent: 'center', marginBottom: '0.6rem' }}>
             {Array.from({ length: 6 }, (_, i) => <div key={i} className={`chamber ${i < (chamberPointers[address?.toLowerCase() || ''] || 0) ? 'safe' : ''}`} style={{ width: 12, height: 12 }} />)}
@@ -444,7 +505,7 @@ export default function GameRoom() {
           </div>
           {state === 'PlayerTurn' && isMyTurn && (
             <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-              {hasCardsLeft && <button className="btn green" style={{ fontSize: '1rem', padding: '0.6rem 1.5rem' }} disabled={selectedCards.length === 0} onClick={playCards}>Play {selectedCards.length || ''} as {targetName(targetCard)}</button>}
+              {hasCardsLeft && <button className="btn green" style={{ fontSize: '1rem', padding: '0.6rem 1.5rem' }} disabled={selectedCards.length === 0} onClick={playCards}>Play {selectedCards.length || ''} as {targetName(targetCard, mode)}</button>}
               {hasClaimToChallenge && <button className="btn red" style={{ fontSize: '1rem', padding: '0.6rem 1.5rem' }} onClick={callLiar}>LIAR!</button>}
               {!hasCardsLeft && !hasClaimToChallenge && <span style={{ fontSize: '0.8rem', color: '#8b7b5a' }}>Waiting...</span>}
             </div>

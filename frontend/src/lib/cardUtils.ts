@@ -10,7 +10,11 @@ export function cardEmoji(value: number): string {
   return CARD_EMOJIS[value] ?? '?';
 }
 
-export function targetName(value: number): string {
+export function targetName(value: number, mode?: string): string {
+  if (mode === 'chaos') {
+    const CHAOS_TARGETS = ['King', 'Queen'];
+    return CHAOS_TARGETS[value] ?? 'Unknown';
+  }
   return TARGET_NAMES[value] ?? 'Unknown';
 }
 

@@ -36,6 +36,13 @@ export function useGameState() {
         }) as [number, number, number, number, number, string];
         updateFromChain({ state, round, targetCard, currentTurnIndex, aliveCount, winner });
 
+        // Clear revealedCards when entering a new challenge
+        const prevState = useGameStore.getState().state;
+        const newState = (['WaitingForPlayers', 'Dealing', 'PlayerTurn', 'Challenging', 'Spinning', 'GameOver'] as const)[state] || 'WaitingForPlayers';
+        if (newState === 'Challenging' && prevState !== 'Challenging') {
+          useGameStore.getState().setRevealedCards([]);
+        }
+
         // Fetch players
         const players = await Promise.all([0, 1, 2, 3].map(async (i) => {
           const result = await publicClient.readContract({

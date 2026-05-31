@@ -73,7 +73,7 @@ export default function ChallengeOverlay({ phase, accuserIndex, accusedIndex, on
               </div>
             </div>
             <p style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: '#8b7b5a', fontStyle: 'italic' }}>
-              Claimed {lastClaimCount} {targetName(targetCard)}{lastClaimCount > 1 ? 's' : ''}
+              Claimed {lastClaimCount} {targetName(targetCard, gameMode)}{lastClaimCount > 1 ? 's' : ''}
             </p>
           </motion.div>
         )}
