@@ -126,6 +126,10 @@ export default function GameRoom() {
       setChallengeAccuser(accuserIdx);
       setChallengeAccused(accusedIdx >= 0 ? accusedIdx : 0);
       setChallengePhase('revealing');
+      // Hard timeout: dismiss after 30s if still stuck
+      setTimeout(() => {
+        if (useGameStore.getState().state === 'Challenging') setChallengePhase(null);
+      }, 30000);
     }
   }, [state, cofheReady, iAmChallenger, resolveChallenge, challengePhase, currentTurnIndex, lastClaimant, players]);
 
@@ -374,22 +378,33 @@ export default function GameRoom() {
           <div style={{ textAlign: 'center' }}>
             <div className="heartbeat-vignette" />
             <h3 style={{ fontSize: '1.3rem', color: '#e94560', marginBottom: '1rem' }}>DEVIL RETRIBUTION</h3>
-            <p style={{ fontSize: '0.85rem', color: '#dfd5b4', marginBottom: '1.5rem' }}>All players must face the barrel!</p>
-            <img src="/revolver_chamber.png" alt="" className="revolver-spin" style={{ width: 100, margin: '0 auto 1rem' }} />
-            {myPlayer?.alive && !spinning && (
-              <button className="btn red" style={{ fontSize: '1.1rem', padding: '0.7rem 2rem' }} onClick={async () => {
-                try {
-                  const gas = await getGasOverrides(publicClient!);
-                  await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'triggerMySpin', args: [BigInt(id!)], ...gas });
-                  notifyStateChanged();
-                  // After triggering, resolve the spin
-                  setTimeout(resolveSpin, 3000);
-                } catch (e: any) {
-                  if (!/User rejected|denied/i.test(e?.message || '')) setTimeout(() => resolveSpin(), 2000);
-                }
-              }}>Pull Trigger</button>
+            {lastClaimant?.toLowerCase() === address?.toLowerCase() ? (
+              <p style={{ fontSize: '0.9rem', color: '#22c55e', marginBottom: '1rem' }}>You played the Devil Card. You are safe!</p>
+            ) : (
+              <>
+                <p style={{ fontSize: '0.85rem', color: '#dfd5b4', marginBottom: '1.5rem' }}>All players must face the barrel!</p>
+                <img src="/revolver_chamber.png" alt="" className="revolver-spin" style={{ width: 100, margin: '0 auto 1rem' }} />
+                {myPlayer?.alive && !spinning && (
+                  <button className="btn red" style={{ fontSize: '1.1rem', padding: '0.7rem 2rem' }} onClick={async () => {
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                      try {
+                        const gas = await getGasOverrides(publicClient!);
+                        await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'triggerMySpin', args: [BigInt(id!)], ...gas });
+                        notifyStateChanged();
+                        // Auto-resolve spin after trigger
+                        await new Promise(r => setTimeout(r, 4000));
+                        await resolveSpin();
+                        return;
+                      } catch (e: any) {
+                        if (/User rejected|denied/i.test(e?.message || '')) return;
+                        if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
+                      }
+                    }
+                  }}>Pull Trigger</button>
+                )}
+                {spinning && <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>Resolving...</p>}
+              </>
             )}
-            {spinning && <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>Resolving...</p>}
           </div>
         )}
 
@@ -397,26 +412,38 @@ export default function GameRoom() {
         {(state === 'Targeting' || state === 'MultiTargeting') && (
           <div style={{ textAlign: 'center' }}>
             <h3 style={{ fontSize: '1.3rem', color: '#a855f7', marginBottom: '1rem' }}>CHOOSE YOUR TARGET</h3>
-            <p style={{ fontSize: '0.85rem', color: '#dfd5b4', marginBottom: '1.5rem' }}>Pick a player to shoot</p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
-              {players.filter((p, i) => p.alive && p.addr?.toLowerCase() !== address?.toLowerCase() && p.addr !== '0x0000000000000000000000000000000000000000').map((p) => {
-                const pIdx = players.indexOf(p);
-                const char = CHARACTERS[p.characterId % CHARACTERS.length];
-                return (
-                  <button key={pIdx} className="btn red" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', padding: '0.8rem' }} onClick={async () => {
-                    try {
-                      const gas = await getGasOverrides(publicClient!);
-                      const fn = state === 'MultiTargeting' ? 'chooseTargetMulti' : 'chooseTarget';
-                      await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: fn, args: [BigInt(id!), p.addr], ...gas });
-                      notifyStateChanged();
-                    } catch {}
-                  }}>
-                    <img src={char.img} alt="" style={{ width: 50, height: 50, borderRadius: '0.3rem' }} />
-                    <span style={{ fontSize: '0.7rem' }}>{char.name}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {(state === 'MultiTargeting' || pendingSpinner?.toLowerCase() === address?.toLowerCase()) ? (
+              <>
+                <p style={{ fontSize: '0.85rem', color: '#dfd5b4', marginBottom: '1.5rem' }}>Pick a player to shoot</p>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                  {players.filter((p) => p.alive && p.addr?.toLowerCase() !== address?.toLowerCase() && p.addr !== '0x0000000000000000000000000000000000000000').map((p) => {
+                    const pIdx = players.indexOf(p);
+                    const char = CHARACTERS[p.characterId % CHARACTERS.length];
+                    return (
+                      <button key={pIdx} className="btn red" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', padding: '0.8rem' }} onClick={async () => {
+                        for (let attempt = 0; attempt < 3; attempt++) {
+                          try {
+                            const gas = await getGasOverrides(publicClient!);
+                            const fn = state === 'MultiTargeting' ? 'chooseTargetMulti' : 'chooseTarget';
+                            await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: fn, args: [BigInt(id!), p.addr], ...gas });
+                            notifyStateChanged();
+                            return;
+                          } catch (e: any) {
+                            if (/User rejected|denied/i.test(e?.message || '')) return;
+                            if (attempt < 2) await new Promise(r => setTimeout(r, 1500));
+                          }
+                        }
+                      }}>
+                        <img src={char.img} alt="" style={{ width: 50, height: 50, borderRadius: '0.3rem' }} />
+                        <span style={{ fontSize: '0.7rem' }}>{char.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p style={{ color: '#8b7b5a', fontSize: '0.9rem' }}>Waiting for shooter to pick target...</p>
+            )}
           </div>
         )}
 
@@ -426,8 +453,13 @@ export default function GameRoom() {
             <div className="heartbeat-vignette" />
             <img src="/revolver_chamber.png" alt="" className="revolver-spin" style={{ width: 100, margin: '0 auto 1rem' }} />
             <p style={{ fontSize: '1rem', color: '#dfd5b4' }}>Shots firing...</p>
-            {!spinning && <button className="btn" style={{ marginTop: '1rem' }} onClick={resolveSpin}>Resolve Shot</button>}
+            {pendingSpinner?.toLowerCase() === address?.toLowerCase() && !spinning && (
+              <button className="btn" style={{ marginTop: '1rem' }} onClick={resolveSpin}>Resolve Shot</button>
+            )}
             {spinning && <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>Resolving...</p>}
+            {pendingSpinner?.toLowerCase() !== address?.toLowerCase() && !spinning && (
+              <p style={{ fontSize: '0.75rem', color: '#8b7b5a', marginTop: '0.5rem' }}>Waiting for shot to resolve...</p>
+            )}
           </div>
         )}
 

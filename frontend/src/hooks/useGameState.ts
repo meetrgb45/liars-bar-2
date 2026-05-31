@@ -73,7 +73,7 @@ export function useGameState() {
         const [claimant, count] = await publicClient.readContract({
           address, abi, functionName: 'getLastClaim', args: [BigInt(gameId)],
         }) as [string, number];
-        setLastClaim(claimant, Number(count));
+        setLastClaim(claimant, gameMode === 'chaos' ? 1 : Number(count));
 
         // Chamber pointers
         const pointers: Record<string, number> = {};
@@ -95,6 +95,14 @@ export function useGameState() {
               address, abi, functionName: 'getPendingSpinner', args: [BigInt(gameId)],
             }) as string;
             setPendingSpinner(spinner);
+          } catch {}
+        } else {
+          // Chaos: read shooter
+          try {
+            const shooter = await publicClient.readContract({
+              address, abi, functionName: 'getShooter', args: [BigInt(gameId)],
+            }) as string;
+            setPendingSpinner(shooter); // reuse pendingSpinner for shooter
           } catch {}
         }
 
