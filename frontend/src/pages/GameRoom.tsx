@@ -14,7 +14,7 @@ import {
   DEVIL_GAME_ADDRESS, DEVIL_GAME_ABI,
   CHAOS_GAME_ADDRESS, CHAOS_GAME_ABI,
 } from '../lib/contracts';
-import { getGasOverrides } from '../lib/gas';
+import { getGasOverrides, getHeavyGasOverrides } from '../lib/gas';
 import { sounds, isMuted, toggleMute } from '../lib/sounds';
 import { shortenAddress, targetName } from '../lib/cardUtils';
 import { CHARACTERS } from '../lib/characters';
@@ -67,6 +67,7 @@ export default function GameRoom() {
   const [loading, setLoading] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [muted, setMuted] = useState(isMuted());
+  const [triggered, setTriggered] = useState(false);
   const [challengePhase, setChallengePhase] = useState<'accusation' | 'revealing' | 'verdict-lie' | 'verdict-valid' | null>(null);
   const [challengeAccuser, setChallengeAccuser] = useState(0);
   const [challengeAccused, setChallengeAccused] = useState(0);
@@ -80,6 +81,9 @@ export default function GameRoom() {
   const { notifyStateChanged } = useWebSocket();
 
   useEffect(() => { if (id) { setGameId(Number(id)); setGameMode(mode); } }, [id, mode, setGameId, setGameMode]);
+
+  // Reset triggered when state changes
+  useEffect(() => { if (state !== 'MultiSpinning') setTriggered(false); }, [state]);
 
   // Sound on game over
   useEffect(() => { if (state === 'GameOver') sounds.gameOver(); }, [state]);
@@ -182,7 +186,7 @@ export default function GameRoom() {
   const startGame = async () => {
     setError(''); setLoading(true);
     try {
-      const gas = await getGasOverrides(publicClient!);
+      const gas = await getHeavyGasOverrides(publicClient!);
       const hash = await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'startGame', args: [BigInt(id!)], ...gas });
       await publicClient!.waitForTransactionReceipt({ hash });
       notifyStateChanged();
@@ -384,14 +388,14 @@ export default function GameRoom() {
               <>
                 <p style={{ fontSize: '0.85rem', color: '#dfd5b4', marginBottom: '1.5rem' }}>All players must face the barrel!</p>
                 <img src="/revolver_chamber.png" alt="" className="revolver-spin" style={{ width: 100, margin: '0 auto 1rem' }} />
-                {myPlayer?.alive && !spinning && (
+                {myPlayer?.alive && !spinning && !triggered && (
                   <button className="btn red" style={{ fontSize: '1.1rem', padding: '0.7rem 2rem' }} onClick={async () => {
                     for (let attempt = 0; attempt < 3; attempt++) {
                       try {
                         const gas = await getGasOverrides(publicClient!);
                         await writeContractAsync({ address: gameContractAddress, abi: gameAbi, functionName: 'triggerMySpin', args: [BigInt(id!)], ...gas });
+                        setTriggered(true);
                         notifyStateChanged();
-                        // Auto-resolve spin after trigger
                         await new Promise(r => setTimeout(r, 4000));
                         await resolveSpin();
                         return;
@@ -402,6 +406,7 @@ export default function GameRoom() {
                     }
                   }}>Pull Trigger</button>
                 )}
+                {triggered && !spinning && <p style={{ fontSize: '0.85rem', color: '#8b7b5a' }}>Waiting for others...</p>}
                 {spinning && <p style={{ fontSize: '0.7rem', color: '#8b7b5a' }}>Resolving...</p>}
               </>
             )}
